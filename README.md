@@ -1,5 +1,5 @@
 # cubrid-9.3.9
-CUBRID Engine 9.3.9. Release
+CUBRID Engine 9.3.9. Release + RND-75, RND-78
 
 Quick Build Hint:
 
