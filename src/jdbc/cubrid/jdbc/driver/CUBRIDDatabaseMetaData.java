@@ -63,6 +63,8 @@ public class CUBRIDDatabaseMetaData implements DatabaseMetaData {
 	int major_version;
 	int minor_version;
 	int shard_id = UShardInfo.SHARD_ID_INVALID;
+	
+	private StringBuffer sql;
 
 	protected CUBRIDDatabaseMetaData(CUBRIDConnection c) {
 		con = c;
@@ -72,6 +74,7 @@ public class CUBRIDDatabaseMetaData implements DatabaseMetaData {
 		major_version = -1;
 		minor_version = -1;
 		shard_id = 0;		// default SHARD #0
+		sql = new StringBuffer();
 	}
 
 	protected CUBRIDDatabaseMetaData(CUBRIDConnection c, int sid) {
@@ -82,6 +85,7 @@ public class CUBRIDDatabaseMetaData implements DatabaseMetaData {
 		major_version = -1;
 		minor_version = -1;
 		shard_id = sid;
+		sql = new StringBuffer();
 	}
 
 	/*
@@ -942,30 +946,18 @@ public class CUBRIDDatabaseMetaData implements DatabaseMetaData {
 		return rs;
 	}
 
-	/*
-	 * empty ResultSet
-	 */
 	public synchronized ResultSet getSchemas() throws SQLException {
 		checkIsOpen();
-
-		String[] names = { "TABLE_SCHEM" };
-		int[] types = { UUType.U_TYPE_VARCHAR };
-		boolean[] nullable = { false };
-
-		return new CUBRIDResultSetWithoutQuery(1, types, names, nullable, null);
+		sql.setLength(0);
+		sql.append("SELECT CURRENT_USER AS TABLE_SCHEM, DATABASE() AS TABLE_CATALOG");
+		return con.createStatement().executeQuery(sql.toString());
 	}
 
-	/*
-	 * empty ResultSet
-	 */
 	public synchronized ResultSet getCatalogs() throws SQLException {
 		checkIsOpen();
-
-		String[] names = { "TABLE_CAT" };
-		int[] types = { UUType.U_TYPE_VARCHAR };
-		boolean[] nullable = { false };
-
-		return new CUBRIDResultSetWithoutQuery(1, types, names, nullable, null);
+		sql.setLength(0);
+		sql.append("SELECT DATABASE() AS TABLE_CAT");
+		return con.createStatement().executeQuery(sql.toString());
 	}
 
 	public synchronized ResultSet getTableTypes() throws SQLException {
