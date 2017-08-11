@@ -9511,6 +9511,11 @@ qdata_group_concat_first_value (THREAD_ENTRY * thread_p,
       return ER_FAILED;
     }
 
+  if (prm_get_bool_value (PRM_ID_ORACLE_STYLE_EMPTY_STRING) == true)
+    {
+      agg_p->accumulator.value->domain.general_info.is_null = 0;
+    }
+
   /* concat the first value */
   result_domain = ((TP_DOMAIN_TYPE (agg_p->domain) == agg_type) ?
 		   agg_p->domain : NULL);
