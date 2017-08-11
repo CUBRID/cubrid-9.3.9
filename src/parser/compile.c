@@ -951,8 +951,9 @@ pt_compile_trigger_stmt (PARSER_CONTEXT * parser,
       stmt_str = pt_append_string (parser, stmt_str, " FROM ON ");
       if (name1)
 	{
+	  stmt_str = pt_append_string (parser, stmt_str, " [");
 	  stmt_str = pt_append_string (parser, stmt_str, class_name);
-	  stmt_str = pt_append_string (parser, stmt_str, " ");
+	  stmt_str = pt_append_string (parser, stmt_str, "] ");
 	  stmt_str = pt_append_string (parser, stmt_str, name1);
 	}
 
@@ -962,9 +963,9 @@ pt_compile_trigger_stmt (PARSER_CONTEXT * parser,
 	    {
 	      return (PT_NODE *) 0;
 	    }
-	  stmt_str = pt_append_string (parser, stmt_str, ", ");
+	  stmt_str = pt_append_string (parser, stmt_str, ", [");
 	  stmt_str = pt_append_string (parser, stmt_str, class_name);
-	  stmt_str = pt_append_string (parser, stmt_str, " ");
+	  stmt_str = pt_append_string (parser, stmt_str, "] ");
 	  stmt_str = pt_append_string (parser, stmt_str, name2);
 	}
     }
