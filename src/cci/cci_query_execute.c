@@ -178,9 +178,6 @@ static void stream_to_obj (char *buf, T_OBJECT * obj);
 
 static int get_data_set (T_CCI_U_TYPE u_type, char *col_value_p,
 			 T_SET ** value, int data_size);
-#if defined (ENABLE_UNUSED_FUNCTION)
-static int get_file_size (char *filename);
-#endif
 static int get_column_info (char *buf_p, int *remain_size,
 			    T_CCI_COL_INFO ** ret_col_info,
 			    char **next_buf_p, bool is_prepare);
@@ -5301,21 +5298,6 @@ get_data_set (T_CCI_U_TYPE u_type, char *col_value_p, T_SET ** value,
   *value = set;
   return 0;
 }
-
-#if defined (ENABLE_UNUSED_FUNCTION)
-static int
-get_file_size (char *filename)
-{
-  struct stat stat_buf;
-
-  if (stat (filename, &stat_buf) >= 0)
-    {
-      return (stat_buf.st_size);
-    }
-
-  return -1;
-}
-#endif
 
 static int
 get_column_info (char *buf_p, int *size, T_CCI_COL_INFO ** ret_col_info,

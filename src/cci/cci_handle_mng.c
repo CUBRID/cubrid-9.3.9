@@ -1021,26 +1021,6 @@ hm_find_host_status_index (unsigned char *ip_addr, int port)
   return index;
 }
 
-
-#if defined (ENABLE_UNUSED_FUNCTION)
-int
-hm_get_ha_connected_host (T_CON_HANDLE * con_handle)
-{
-  int i, cur_host_id = -1;
-
-  MUTEX_LOCK (ha_status_mutex);
-  i = hm_find_ha_status_index (con_handle);
-
-  if (i >= 0)
-    {
-      cur_host_id = ha_status[i].cur_host_id;
-    }
-
-  MUTEX_UNLOCK (ha_status_mutex);
-  return cur_host_id;
-}
-#endif
-
 bool
 hm_is_host_reachable (T_CON_HANDLE * con_handle, int host_id)
 {
