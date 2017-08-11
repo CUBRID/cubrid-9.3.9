@@ -5430,56 +5430,87 @@ qstr_eval_like (const char *tar, int tar_length,
  * db_string_replace () -
  */
 int
-db_string_replace (const DB_VALUE * src_string, const DB_VALUE * srch_string,
-		   const DB_VALUE * repl_string, DB_VALUE * replaced_string)
+db_string_replace (const DB_VALUE * src_string, const DB_VALUE * srch_string, const DB_VALUE * repl_string,
+       DB_VALUE * replaced_string)
 {
   int error_status = NO_ERROR;
   unsigned char *result_ptr = NULL;
   int result_length = 0, result_size = 0;
   DB_TYPE result_type = DB_TYPE_NULL;
   int coll_id, coll_id_tmp;
+  DB_VALUE dummy_string;
+  int is_repl_string_omitted = false;
+  unsigned char *repl_string_ptr = NULL;
+  int repl_string_size = 0;
 
   assert (src_string != (DB_VALUE *) NULL);
   assert (replaced_string != (DB_VALUE *) NULL);
 
-  if (DB_IS_NULL (src_string) || DB_IS_NULL (srch_string)
-      || DB_IS_NULL (repl_string))
+  DB_MAKE_NULL (&dummy_string);
+
+  if (repl_string == NULL)
     {
-      if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
-	{
+      is_repl_string_omitted = true;
+    }
+
+  if (DB_IS_NULL (src_string) || DB_IS_NULL (srch_string) || (!is_repl_string_omitted && DB_IS_NULL (repl_string)))
+    {
+      if (prm_get_bool_value (PRM_ID_ORACLE_STYLE_EMPTY_STRING) == true && !DB_IS_NULL (src_string)
+    && is_char_string (src_string))
+  /* srch_string or repl_string is null */
+  {
 	  error_status =
-	    db_value_domain_init (replaced_string, DB_TYPE_VARCHAR,
-				  DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+      db_string_make_empty_typed_string (NULL, &dummy_string, DB_VALUE_DOMAIN_TYPE (src_string),
+                 TP_FLOATING_PRECISION_VALUE, DB_GET_STRING_CODESET (src_string),
+                 DB_GET_STRING_COLLATION (src_string));
+    if (error_status != NO_ERROR)
+      {
+        goto exit;
+      }
+
+    if (DB_IS_NULL (srch_string))
+      {
+        srch_string = &dummy_string;
+      }
+    if (!is_repl_string_omitted && DB_IS_NULL (repl_string))
+      {
+        repl_string = &dummy_string;
+      }
 	}
       else
 	{
-	  error_status =
-	    db_value_domain_init (replaced_string, DB_TYPE_VARNCHAR,
-				  DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+    if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
+      {
+        error_status =
+    db_value_domain_init (replaced_string, DB_TYPE_VARCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+      }
+    else
+      {
+        error_status =
+    db_value_domain_init (replaced_string, DB_TYPE_VARNCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+      }
+    goto exit;
 	}
-      return error_status;
     }
 
-  if (!is_char_string (srch_string) || !is_char_string (repl_string)
+  if (!is_char_string (srch_string) || (!is_repl_string_omitted && !is_char_string (repl_string))
       || !is_char_string (src_string))
     {
       error_status = ER_QSTR_INVALID_DATA_TYPE;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_QSTR_INVALID_DATA_TYPE, 0);
-      return error_status;
+      goto exit;
     }
 
   if ((qstr_get_category (src_string) != qstr_get_category (srch_string))
-      || (qstr_get_category (src_string) != qstr_get_category (repl_string))
-      || (qstr_get_category (srch_string) != qstr_get_category (repl_string))
-      || (DB_GET_STRING_CODESET (src_string)
-	  != DB_GET_STRING_CODESET (srch_string))
-      || (DB_GET_STRING_CODESET (src_string)
-	  != DB_GET_STRING_CODESET (repl_string)))
+      || (!is_repl_string_omitted && (qstr_get_category (src_string) != qstr_get_category (repl_string)))
+      || (!is_repl_string_omitted && (qstr_get_category (srch_string) != qstr_get_category (repl_string)))
+      || ((DB_GET_STRING_CODESET (src_string) != DB_GET_STRING_CODESET (srch_string)))
+      || (!is_repl_string_omitted && (DB_GET_STRING_CODESET (src_string) != DB_GET_STRING_CODESET (repl_string))))
     {
       error_status = ER_QSTR_INCOMPATIBLE_CODE_SETS;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE,
 	      ER_QSTR_INCOMPATIBLE_CODE_SETS, 0);
-      return error_status;
+      goto exit;
     }
 
   LANG_RT_COMMON_COLL (DB_GET_STRING_COLLATION (src_string),
@@ -5488,58 +5519,57 @@ db_string_replace (const DB_VALUE * src_string, const DB_VALUE * srch_string,
     {
       error_status = ER_QSTR_INCOMPATIBLE_COLLATIONS;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error_status, 0);
-      return error_status;
+      goto exit;
     }
 
-  LANG_RT_COMMON_COLL (coll_id_tmp, DB_GET_STRING_COLLATION (repl_string),
-		       coll_id);
-
-  if (coll_id == -1)
+  if (!is_repl_string_omitted)
     {
-      error_status = ER_QSTR_INCOMPATIBLE_COLLATIONS;
-      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error_status, 0);
-      return error_status;
+      LANG_RT_COMMON_COLL (coll_id_tmp, DB_GET_STRING_COLLATION (repl_string), coll_id);
+      if (coll_id == -1)
+  {
+    error_status = ER_QSTR_INCOMPATIBLE_COLLATIONS;
+    er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error_status, 0);
+    goto exit;
+  }
+    }
+  else
+    {
+      coll_id = coll_id_tmp;
     }
 
   result_type = QSTR_IS_NATIONAL_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)) ?
     DB_TYPE_VARNCHAR : DB_TYPE_VARCHAR;
 
-  error_status = qstr_replace ((unsigned char *) DB_PULL_STRING (src_string),
-			       DB_GET_STRING_LENGTH (src_string),
-			       DB_GET_STRING_SIZE (src_string),
-			       (INTL_CODESET)
-			       DB_GET_STRING_CODESET (src_string),
-			       coll_id,
-			       (unsigned char *) DB_PULL_STRING (srch_string),
-			       DB_GET_STRING_SIZE (srch_string),
-			       (unsigned char *) DB_PULL_STRING (repl_string),
-			       DB_GET_STRING_SIZE (repl_string),
-			       &result_ptr, &result_length, &result_size);
+  if (!is_repl_string_omitted)
+    {
+      repl_string_ptr = (unsigned char *) DB_PULL_STRING (repl_string);
+      repl_string_size = DB_GET_STRING_SIZE (repl_string);
+    }
+  error_status =
+    qstr_replace ((unsigned char *) DB_PULL_STRING (src_string), DB_GET_STRING_LENGTH (src_string),
+      DB_GET_STRING_SIZE (src_string), (INTL_CODESET) DB_GET_STRING_CODESET (src_string), coll_id,
+      (unsigned char *) DB_PULL_STRING (srch_string), DB_GET_STRING_SIZE (srch_string), repl_string_ptr,
+      repl_string_size, &result_ptr, &result_length, &result_size);
 
   if (error_status == NO_ERROR && result_ptr != NULL)
     {
       if (result_length == 0)
 	{
-	  qstr_make_typed_string (result_type,
-				  replaced_string,
-				  (DB_GET_STRING_LENGTH (src_string) == 0) ?
-				  1 : DB_GET_STRING_LENGTH (src_string),
-				  (char *) result_ptr, result_size,
-				  DB_GET_STRING_CODESET (src_string),
-				  coll_id);
+    qstr_make_typed_string (result_type, replaced_string,
+          (DB_GET_STRING_LENGTH (src_string) == 0) ? 1 : DB_GET_STRING_LENGTH (src_string),
+          (char *) result_ptr, result_size, DB_GET_STRING_CODESET (src_string), coll_id);
 	}
       else
 	{
-	  qstr_make_typed_string (result_type,
-				  replaced_string,
-				  result_length,
-				  (char *) result_ptr, result_size,
-				  DB_GET_STRING_CODESET (src_string),
-				  coll_id);
+    qstr_make_typed_string (result_type, replaced_string, result_length, (char *) result_ptr, result_size,
+          DB_GET_STRING_CODESET (src_string), coll_id);
 	}
       result_ptr[result_size] = 0;
       replaced_string->need_clear = true;
     }
+
+exit:
+  pr_clear_value (&dummy_string);
 
   return error_status;
 }

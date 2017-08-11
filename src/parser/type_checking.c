@@ -16808,7 +16808,8 @@ pt_evaluate_db_value_expr (PARSER_CONTEXT * parser,
       return 1;
 
     case PT_CHAR_LENGTH:
-      if (o1->type_enum == PT_TYPE_NA || o1->type_enum == PT_TYPE_NULL)
+      if (o1->type_enum == PT_TYPE_NA || o1->type_enum == PT_TYPE_NULL ||
+	  (prm_get_bool_value (PRM_ID_ORACLE_STYLE_EMPTY_STRING) == true && DB_IS_NULL (arg1)))
 	{
 	  db_make_null (result);
 	  return 1;
