@@ -655,6 +655,11 @@ export_serial (FILE * outfp)
     "[cached_num] "
     "from [db_serial] where [class_name] is null and [att_name] is null";
 
+  for (i = 0; i < SERIAL_VALUE_INDEX_MAX; i++)
+    db_make_null (&(values[i]));
+  db_make_null (&diff_value);
+  db_make_null (&answer_value);
+
   error = db_execute (query, &query_result, &query_error);
   if (error < 0)
     {
