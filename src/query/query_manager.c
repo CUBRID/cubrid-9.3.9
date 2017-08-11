@@ -532,6 +532,8 @@ qmgr_allocate_query_entry (THREAD_ENTRY * thread_p,
 			   QMGR_TRAN_ENTRY * tran_entry_p)
 {
   QMGR_QUERY_ENTRY *query_p;
+  int loop_cnt = 0;
+  const int MAX_QUERY_ID = SHRT_MAX - 2;
 
   query_p = tran_entry_p->free_query_entry_list_p;
 
@@ -565,11 +567,29 @@ qmgr_allocate_query_entry (THREAD_ENTRY * thread_p,
     }
 
   /* assign query id */
-  if (tran_entry_p->query_id_generator >= SHRT_MAX - 2)	/* overflow happened */
+  while (1)
     {
-      tran_entry_p->query_id_generator = 0;
+      if (tran_entry_p->query_id_generator >= MAX_QUERY_ID)	/* overflow happened */
+	{
+	  tran_entry_p->query_id_generator = 0;
+	}
+
+      query_p->query_id = ++tran_entry_p->query_id_generator;
+
+      if (session_check_if_query_id_in_use (thread_p, query_p->query_id) == false)
+	{
+	  break;
+	}
+
+      loop_cnt++;
+
+      /* prevent infinite loop */
+      if (loop_cnt == MAX_QUERY_ID)
+	{
+	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_CPLUS_CORRUPT_ITER, 0);
+	  return NULL;
+	}
     }
-  query_p->query_id = ++tran_entry_p->query_id_generator;
 
   /* initialize per query temp file VFID structure */
   query_p->next = NULL;
