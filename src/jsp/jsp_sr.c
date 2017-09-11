@@ -90,6 +90,7 @@
 #endif /* WINDOWS */
 
 #define BUF_SIZE        2048
+#define JVM_OPT_BUF_SIZE 64
 typedef jint (*CREATE_VM_FUNC) (JavaVM **, void **, void *);
 
 #ifdef __cplusplus
@@ -134,6 +135,7 @@ extern PfnDliHook __pfnDliFailureHook2 = delay_load_hook;
 #else /* WINDOWS */
 static void *jsp_get_create_java_vm_function_ptr (void);
 static void jsp_display_warning_msg (void);
+static bool make_jvm_heap_option_str (const char *, char *, char *);
 #endif /* !WINDOWS */
 
 #if defined(WINDOWS)
@@ -365,6 +367,91 @@ jsp_display_warning_msg ()
 }
 
 /*
+ * check a value of the sp_jvm_size parameter
+ *   return: return FALSE on error otherwise TRUE 
+ *   sp_jvm_size(in): a value of the sp_jvm_size parameter
+ *   xms(out): -Xms JVM option
+ *   xmx(out): -Xmx JVM option
+ */
+static bool
+make_jvm_heap_option_str (const char *sp_jvm_size, char *xms, char *xmx)
+{
+  int length = 0;
+  char *unit = NULL;
+  unsigned long number = 0;
+  const unsigned long KB = 1024;
+  const unsigned long MB = KB * 1024;
+  const unsigned long GB = MB * 1024;
+
+  if (sp_jvm_size == NULL || !strcmp (sp_jvm_size, "") || xms == NULL || xmx == NULL)
+    {
+      return false;
+    }
+
+  length = strlen (sp_jvm_size);
+
+  number = strtoul (sp_jvm_size, &unit, 10);
+
+  if (number == 0 || number == ULONG_MAX)
+    {
+      return false;
+    }
+
+  if (strcmp (unit, ""))
+    {
+      /* unacceptable such as 'sp_jvm_size=512m2', 'sp_jvm_size=512km' styles */
+      if ((sp_jvm_size + length - 1) == unit)
+	{
+	  switch (*unit)
+	    {
+	    case 'k':
+	    case 'K':
+	      if (number > ULONG_MAX / KB)
+		return false;
+	      number *= KB;
+	      break;
+	    case 'm':
+	    case 'M':
+	      if (number > ULONG_MAX / MB)
+		return false;
+	      number = number * MB;
+	      break;
+	    case 'g':
+	    case 'G':
+	      if (number > ULONG_MAX / GB)
+		return false;
+	      number = number * GB;
+	      break;
+	    default:
+	      return false;
+	    }
+	}
+      else
+	{
+	  return false;
+	}
+    }
+
+  if (number < 64 * MB)
+    {
+      snprintf (xms, JVM_OPT_BUF_SIZE, "%s", "-Xms64m");
+      snprintf (xmx, JVM_OPT_BUF_SIZE, "%s", "-Xmx64m");
+    }
+  else if (number > GB)
+    {
+      snprintf (xms, JVM_OPT_BUF_SIZE, "%s", "-Xms1g");
+      snprintf (xmx, JVM_OPT_BUF_SIZE, "-Xmx%s", sp_jvm_size);
+    }
+  else
+    {
+      snprintf (xms, JVM_OPT_BUF_SIZE, "-Xms%s", sp_jvm_size);
+      snprintf (xmx, JVM_OPT_BUF_SIZE, "-Xmx%s", sp_jvm_size);
+    }
+
+  return true;
+}
+
+/*
  * jsp_start_server -
  *   return: Error Code
  *   db_name(in): db name
@@ -383,13 +470,16 @@ jsp_start_server (const char *db_name, const char *path)
   jstring jstr_dbname, jstr_path, jstr_version, jstr_envroot;
   jobjectArray args;
   JavaVMInitArgs vm_arguments;
-  JavaVMOption options[3];
+  JavaVMOption options[5];
   char classpath[PATH_MAX + 32], logging_prop[PATH_MAX + 32];
   char *loc_p, *locale;
   const char *envroot;
   char jsp_file_path[PATH_MAX];
   char optionString2[] = "-Xrs";
   CREATE_VM_FUNC create_vm_func = NULL;
+  char *sp_jvm_size = NULL;
+  char xms[JVM_OPT_BUF_SIZE], xmx[JVM_OPT_BUF_SIZE];
+  bool use_ok_jvm_size = false;
 
   if (prm_get_bool_value (PRM_ID_JAVA_STORED_PROCEDURE) == false)
     {
@@ -399,6 +489,17 @@ jsp_start_server (const char *db_name, const char *path)
   if (jvm != NULL)
     {
       return NO_ERROR;		/* already created */
+    }
+
+  sp_jvm_size = prm_get_string_value (PRM_ID_SP_JVM_SIZE);
+  if (sp_jvm_size != NULL)
+    {
+      use_ok_jvm_size = make_jvm_heap_option_str (sp_jvm_size, xms, xmx);
+      if (use_ok_jvm_size == false)
+	{
+	  er_set (ER_WARNING_SEVERITY, ARG_FILE_LINE, ER_PRM_BAD_VALUE, 1, prm_get_name (PRM_ID_SP_JVM_SIZE));
+	  goto error;
+	}
     }
 
   envroot = envvar_root ();
@@ -421,9 +522,18 @@ jsp_start_server (const char *db_name, const char *path)
   options[0].optionString = classpath;
   options[1].optionString = logging_prop;
   options[2].optionString = optionString2;
+  if (use_ok_jvm_size == true)
+    {
+      options[3].optionString = xms;
+      options[4].optionString = xmx;
+      vm_arguments.nOptions = 5;
+    }
+  else
+    {
+      vm_arguments.nOptions = 3;
+    }
   vm_arguments.version = JNI_VERSION_1_4;
   vm_arguments.options = options;
-  vm_arguments.nOptions = 3;
   vm_arguments.ignoreUnrecognized = JNI_TRUE;
 
   locale = NULL;
@@ -473,11 +583,8 @@ jsp_start_server (const char *db_name, const char *path)
 
   if (res < 0)
     {
-      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_SP_CANNOT_START_JVM,
-	      1, "JNI_CreateJavaVM");
-      jsp_display_warning_msg ();
-      jvm = NULL;
-      return er_errid ();
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_SP_CANNOT_START_JVM, 1, "JNI_CreateJavaVM");
+      goto error;
     }
 
   cls = JVM_FindClass (env_p, "com/cubrid/jsp/Server");

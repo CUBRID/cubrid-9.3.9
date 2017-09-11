@@ -1,0 +1,53 @@
+# git ls-files --others --exclude-from=.git/info/exclude
+# Lines that start with '#' are comments.
+# For a project mostly in C, the following would be a good set of
+# exclude patterns (uncomment them if you want to use them):
+# *.[oa]
+# *~
+*.[oa]
+*.la
+*.lo
+/util/
+/external/
+*.cat
+*.deps
+Makefile
+Makefile.in
+config.status
+config.log
+broker/broker_changer
+broker/broker_log_converter
+broker/broker_log_runner
+broker/broker_log_top
+broker/broker_monitor
+broker/broker_tester
+broker/cub_broker
+broker/cub_cas
+broker/cub_proxy
+broker/cubrid_broker
+broker/cubrid_replay
+/plugin/
+/tools/
+/cm_common/
+/sa/.libs/
+/libtool
+/stamp-h1
+/jdbc/*.jar
+/jdbc/src/
+/jdbc/bin-cubrid/
+/jdbc/src-cubrid/
+/*/.libs/
+/cubridmanager/
+/java/bin/
+/java/jspserver.jar
+/java/src-jsp/
+/java/src/
+/CUBRID-*.sh
+/CUBRID-*.gz
+/_install
+aclocal.m4
+autom4te.cache/
+config.h
+config.h.in
+config/
+configure

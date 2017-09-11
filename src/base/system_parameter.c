@@ -579,6 +579,8 @@ static const char sysprm_ha_conf_file_name[] = "cubrid_ha.conf";
 #define PRM_NAME_HA_REPL_FILTER_TYPE "ha_repl_filter_type"
 #define PRM_NAME_HA_REPL_FILTER_FILE "ha_repl_filter_file"
 
+#define PRM_NAME_SP_JVM_SIZE "sp_jvm_size"
+
 /*
  * Note about ERROR_LIST and INTEGER_LIST type
  * ERROR_LIST type is an array of bool type with the size of -(ER_LAST_ERROR)
@@ -1910,6 +1912,9 @@ const char *PRM_HA_REPL_FILTER_FILE = "";
 static const char *prm_ha_repl_filter_file_default = "";
 static unsigned int prm_ha_repl_filter_file_flag = 0;
 
+const char *PRM_SP_JVM_SIZE = NULL;
+static const char *prm_sp_jvm_size_default = NULL;
+static unsigned int prm_sp_jvm_size_flag = 0;
 
 typedef int (*DUP_PRM_FUNC) (void *, SYSPRM_DATATYPE, void *,
 			     SYSPRM_DATATYPE);
@@ -4564,6 +4569,16 @@ static SYSPRM_PARAM prm_Def[] = {
    (void *) &prm_ha_repl_filter_file_flag,
    (void *) &prm_ha_repl_filter_file_default,
    (void *) &PRM_HA_REPL_FILTER_FILE,
+   (void *) NULL, (void *) NULL,
+   (char *) NULL,
+   (DUP_PRM_FUNC) NULL,
+   (DUP_PRM_FUNC) NULL},
+  {PRM_NAME_SP_JVM_SIZE,
+   (PRM_FOR_SERVER),
+   PRM_STRING,
+   (void *) &prm_sp_jvm_size_flag,
+   (void *) &prm_sp_jvm_size_default,
+   (void *) &PRM_SP_JVM_SIZE,
    (void *) NULL, (void *) NULL,
    (char *) NULL,
    (DUP_PRM_FUNC) NULL,

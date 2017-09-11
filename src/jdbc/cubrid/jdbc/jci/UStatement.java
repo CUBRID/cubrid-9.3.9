@@ -527,7 +527,7 @@ public class UStatement {
 			        && (relatedConnection.getAutoCommit() == false
 			                || relatedConnection.brokerInfoStatementPooling() == true
 			                || ((prepare_flag & UConnection.PREPARE_HOLDABLE) != 0))) {
-				if (getSqlType()) {
+				if (getSqlType() || UJCIUtil.isServerSide()) {
 					synchronized (relatedConnection) {
 						outBuffer.newRequest(UFunctionCode.CLOSE_USTATEMENT);
 						outBuffer.addInt(serverHandler);

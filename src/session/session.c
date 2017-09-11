@@ -2327,6 +2327,37 @@ session_free_sentry_data (THREAD_ENTRY * thread_p,
 }
 
 /*
+ * session_check_if_query_id_in_use () - determine whether the query_id is in use or not in session
+ * return : true or false
+ * thread_p (in) : active thread
+ * query_id (in) : query id
+ */
+bool
+session_check_if_query_id_in_use (THREAD_ENTRY * thread_p, QUERY_ID query_id)
+{
+  SESSION_STATE *state_p = NULL;
+  SESSION_QUERY_ENTRY *sentry_p = NULL;
+
+  state_p = session_get_session_state (thread_p);
+  if (state_p == NULL)
+    {
+      return false;
+    }
+
+  sentry_p = state_p->queries;
+  while (sentry_p != NULL)
+    {
+      if (sentry_p->query_id == query_id)
+	{
+	  return true;
+	}
+      sentry_p = sentry_p->next;
+    }
+
+  return false;
+}
+
+/*
  * session_load_query_entry_info () - search for a query entry
  * return : error code or NO_ERROR
  * thread_p (in) :

@@ -3664,6 +3664,12 @@ qo_check_iscan_for_multi_range_opt (QO_PLAN * plan)
       /* NO_MULTI_RANGE_OPT was hinted */
       return false;
     }
+
+  if (query->info.query.q.select.group_by != NULL)
+  {
+      return false;
+  }
+
   all_distinct = query->info.query.all_distinct;
   order_by = query->info.query.order_by;
 

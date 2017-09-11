@@ -92,9 +92,6 @@
 
 static int connect_srv (unsigned char *ip_addr, int port, char is_retry,
 			SOCKET * ret_sock, int login_timeout);
-#if defined(ENABLE_UNUSED_FUNCTION)
-static int net_send_int (SOCKET sock_fd, int value);
-#endif
 static int net_recv_int (SOCKET sock_fd, int port, int *value);
 static int net_recv_stream (SOCKET sock_fd, int port, char *buf, int size,
 			    int timeout);
@@ -971,80 +968,9 @@ finish_health_check:
   return result;
 }
 
-#if defined (ENABLE_UNUSED_FUNCTION)
-int
-net_send_file (SOCKET sock_fd, char *filename, int filesize)
-{
-  int remain_size = filesize;
-  int fd;
-  char read_buf[1024];
-  int read_len;
-
-  fd = open (filename, O_RDONLY);
-  if (fd < 0)
-    {
-      return CCI_ER_FILE;
-    }
-
-#if defined(WINDOWS)
-  setmode (fd, O_BINARY);
-#endif
-
-  while (remain_size > 0)
-    {
-      read_len = (int) read (fd, read_buf,
-			     (int) MIN (remain_size, SSIZEOF (read_buf)));
-      if (read_len < 0)
-	{
-	  close (fd);
-	  return CCI_ER_FILE;
-	}
-      if (net_send_stream (sock_fd, read_buf, read_len) < 0)
-	{
-	  close (fd);
-	  return CCI_ER_FILE;
-	}
-      remain_size -= read_len;
-    }
-
-  close (fd);
-
-  return 0;
-}
-
-int
-net_recv_file (SOCKET sock_fd, int port, int file_size, int out_fd)
-{
-  int read_len;
-  char read_buf[1024];
-
-  while (file_size > 0)
-    {
-      read_len = (int) MIN (file_size, SSIZEOF (read_buf));
-      if (net_recv_stream (sock_fd, port, read_buf, read_len, 0) < 0)
-	{
-	  return CCI_ER_COMMUNICATION;
-	}
-      write (out_fd, read_buf, read_len);
-      file_size -= read_len;
-    }
-
-  return 0;
-}
-#endif
-
 /************************************************************************
  * IMPLEMENTATION OF PRIVATE FUNCTIONS	 				*
  ************************************************************************/
-#if defined(ENABLE_UNUSED_FUNCTION)
-static int
-net_send_int (SOCKET sock_fd, int value)
-{
-  value = htonl (value);
-  return (net_send_stream (sock_fd, (char *) &value, 4));
-}
-#endif
-
 static int
 net_recv_int (SOCKET sock_fd, int port, int *value)
 {
