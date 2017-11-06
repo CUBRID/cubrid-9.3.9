@@ -8818,54 +8818,29 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  break;
 
 		case PT_LTRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
 		      break;
 		    }
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_LTRIM, domain);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_RTRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
 		      break;
 		    }
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_RTRIM, domain);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_FROM_UNIXTIME:
@@ -8886,41 +8861,15 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  break;
 
 		case PT_LPAD:
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r3 = (node->info.expr.arg3)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg3,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg3, unbox) : NULL;
 		  regu = pt_make_regu_arith (r1, r2, r3, T_LPAD, domain);
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_RPAD:
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r3 = (node->info.expr.arg3)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg3,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg3, unbox) : NULL;
 		  regu = pt_make_regu_arith (r1, r2, r3, T_RPAD, domain);
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_REPLACE:
@@ -9289,17 +9238,10 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  }
 
 		case PT_TRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
@@ -9308,12 +9250,6 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_TRIM, domain);
 
 		  pt_to_misc_operand (regu, node->info.expr.qualifier);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_INST_NUM:

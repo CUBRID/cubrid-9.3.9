@@ -3845,7 +3845,7 @@ db_string_trim (const MISC_OPERAND tr_operand,
 		const DB_VALUE * src_string, DB_VALUE * trimmed_string)
 {
   int error_status = NO_ERROR;
-  int trim_charset_is_null = false;
+  int is_trim_charset_omitted = false;
 
   unsigned char *result;
   int result_length, result_size = 0, result_domain_length;
@@ -3862,7 +3862,6 @@ db_string_trim (const MISC_OPERAND tr_operand,
 
   assert (src_string != (DB_VALUE *) NULL);
   assert (trimmed_string != (DB_VALUE *) NULL);
-  assert (trim_charset != (DB_VALUE *) NULL);
 
   /* if source is NULL, return NULL */
   if (DB_IS_NULL (src_string))
@@ -3882,29 +3881,25 @@ db_string_trim (const MISC_OPERAND tr_operand,
 
   if (trim_charset == NULL)
     {
-      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_QPROC_INVALID_PARAMETER,
-	      0);
-      return ER_QPROC_INVALID_PARAMETER;
+      is_trim_charset_omitted = true;
     }
+  else
+    {
+      is_trim_charset_omitted = false;
+      trim_type = DB_VALUE_DOMAIN_TYPE (trim_charset);
 
-  trim_type = DB_VALUE_DOMAIN_TYPE (trim_charset);
-  if (trim_type == DB_TYPE_NULL)
-    {
-      trim_charset_is_null = true;
-    }
-  else if (DB_IS_NULL (trim_charset))
-    {
-      if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
+      if (DB_IS_NULL (trim_charset))
 	{
-	  db_value_domain_init (trimmed_string, DB_TYPE_VARCHAR,
-				DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+	  if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
+	    {
+	      db_value_domain_init (trimmed_string, DB_TYPE_VARCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+	    }
+	  else
+	    {
+	      db_value_domain_init (trimmed_string, DB_TYPE_VARNCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+	    }
+	  return error_status;
 	}
-      else
-	{
-	  db_value_domain_init (trimmed_string, DB_TYPE_VARNCHAR,
-				DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
-	}
-      return error_status;
     }
 
   /*
@@ -3912,15 +3907,14 @@ db_string_trim (const MISC_OPERAND tr_operand,
    */
 
   src_type = DB_VALUE_DOMAIN_TYPE (src_string);
-  if (!QSTR_IS_ANY_CHAR (src_type)
-      || (!trim_charset_is_null && !QSTR_IS_ANY_CHAR (trim_type)))
+  if (!QSTR_IS_ANY_CHAR (src_type) || (!is_trim_charset_omitted && !QSTR_IS_ANY_CHAR (trim_type)))
     {
       error_status = ER_QSTR_INVALID_DATA_TYPE;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_QSTR_INVALID_DATA_TYPE, 0);
       return error_status;
     }
 
-  if (!trim_charset_is_null
+  if (!is_trim_charset_omitted
       && (qstr_get_category (src_string) != qstr_get_category (trim_charset)
 	  || DB_GET_STRING_CODESET (src_string)
 	  != DB_GET_STRING_CODESET (trim_charset)))
@@ -3934,7 +3928,7 @@ db_string_trim (const MISC_OPERAND tr_operand,
   /*
    * begin of main codes
    */
-  if (!trim_charset_is_null)
+  if (!is_trim_charset_omitted)
     {
       trim_charset_ptr = (unsigned char *) DB_PULL_STRING (trim_charset);
       trim_charset_length = DB_GET_STRING_LENGTH (trim_charset);
@@ -4245,12 +4239,30 @@ db_string_pad (const MISC_OPERAND pad_operand, const DB_VALUE * src_string,
   int pad_charset_length = 0;
   int pad_charset_size = 0;
   DB_TYPE src_type;
+  bool is_pad_charset_omitted = false;
 
   assert (src_string != (DB_VALUE *) NULL);
   assert (padded_string != (DB_VALUE *) NULL);
 
   /* if source is NULL, return NULL */
-  if (DB_IS_NULL (src_string) || DB_IS_NULL (pad_charset))
+  if (DB_IS_NULL (src_string))
+    {
+      if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
+	{
+	  db_value_domain_init (padded_string, DB_TYPE_VARCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+	}
+      else
+	{
+	  db_value_domain_init (padded_string, DB_TYPE_VARNCHAR, DB_DEFAULT_PRECISION, DB_DEFAULT_SCALE);
+	}
+      return error_status;
+    }
+
+  if (pad_charset == NULL)
+    {
+      is_pad_charset_omitted = true;
+    }
+  else if (DB_IS_NULL (pad_charset))
     {
       if (QSTR_IS_CHAR (DB_VALUE_DOMAIN_TYPE (src_string)))
 	{
@@ -4283,16 +4295,16 @@ db_string_pad (const MISC_OPERAND pad_operand, const DB_VALUE * src_string,
     }
 
   src_type = DB_VALUE_DOMAIN_TYPE (src_string);
-  if (!QSTR_IS_ANY_CHAR (src_type) || !is_char_string (pad_charset))
+  if (!QSTR_IS_ANY_CHAR (src_type) || (!is_pad_charset_omitted && !is_char_string (pad_charset)))
     {
       error_status = ER_QSTR_INVALID_DATA_TYPE;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_QSTR_INVALID_DATA_TYPE, 0);
       return error_status;
     }
 
-  if ((qstr_get_category (src_string) != qstr_get_category (pad_charset))
-      || (DB_GET_STRING_CODESET (src_string)
-	  != DB_GET_STRING_CODESET (pad_charset)))
+  if (!is_pad_charset_omitted
+      && (qstr_get_category (src_string) != qstr_get_category (pad_charset)
+	  || DB_GET_STRING_CODESET (src_string) != DB_GET_STRING_CODESET (pad_charset)))
     {
       error_status = ER_QSTR_INCOMPATIBLE_CODE_SETS;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE,
@@ -4300,10 +4312,17 @@ db_string_pad (const MISC_OPERAND pad_operand, const DB_VALUE * src_string,
       return error_status;
     }
 
+  if (!is_pad_charset_omitted)
+    {
+      pad_charset_ptr = (unsigned char *) DB_PULL_STRING (pad_charset);
+      pad_charset_length = DB_GET_STRING_LENGTH (pad_charset);
+      pad_charset_size = DB_GET_STRING_SIZE (pad_charset);
+    }
+
   error_status = qstr_pad (pad_operand, total_length,
-			   (unsigned char *) DB_PULL_STRING (pad_charset),
-			   DB_GET_STRING_LENGTH (pad_charset),
-			   DB_GET_STRING_SIZE (pad_charset),
+			   pad_charset_ptr,
+			   pad_charset_length,
+			   pad_charset_size,
 			   (unsigned char *) DB_PULL_STRING (src_string),
 			   DB_VALUE_DOMAIN_TYPE (src_string),
 			   DB_GET_STRING_LENGTH (src_string),
@@ -18747,7 +18766,7 @@ db_format (const DB_VALUE * value, const DB_VALUE * decimals,
   const char *integer_format_max =
     "99,999,999,999,999,999,999,999,999,999,999,999,999";
   char format[128];
-  DB_VALUE format_val, trim_charset, formatted_val, numeric_val, trimmed_val;
+  DB_VALUE format_val, formatted_val, numeric_val, trimmed_val;
   const DB_VALUE *num_dbval_p = NULL;
   char fraction_symbol;
   char digit_grouping_symbol;
@@ -18823,8 +18842,7 @@ db_format (const DB_VALUE * value, const DB_VALUE * decimals,
 	/* Trim first because the input string can be given like below:
 	 *  - ' 1.1 ', '1.1 ', ' 1.1'
 	 */
-	db_make_null (&trim_charset);
-	error = db_string_trim (BOTH, &trim_charset, value, &trimmed_val);
+	error = db_string_trim (BOTH, NULL, value, &trimmed_val);
 	if (error != NO_ERROR)
 	  {
 	    return error;
@@ -18923,9 +18941,7 @@ db_format (const DB_VALUE * value, const DB_VALUE * decimals,
       /* number_to_char function returns a string with leading empty characters.
        * So, we need to remove them.
        */
-      db_make_null (&trim_charset);
-      error = db_string_trim (LEADING, &trim_charset, &formatted_val, result);
-
+      error = db_string_trim (LEADING, NULL, &formatted_val, result);
       pr_clear_value (&formatted_val);
     }
 
@@ -19938,7 +19954,7 @@ db_date_add_sub_interval_expr (DB_VALUE * result, const DB_VALUE * date,
   DB_TIMESTAMP db_timestamp, *ts_p = NULL;
   int narg, is_dt = -1, is_d = -1, is_t = -1, is_timest = -1;
   char delim;
-  DB_VALUE trimed_expr, charset;
+  DB_VALUE trimed_expr;
   DB_BIGINT unit_int_val;
   double dbl;
   int y, m, d, h, mi, s, ms;
@@ -19979,8 +19995,7 @@ db_date_add_sub_interval_expr (DB_VALUE * result, const DB_VALUE * date,
     case DB_TYPE_VARCHAR:
     case DB_TYPE_NCHAR:
     case DB_TYPE_VARNCHAR:
-      DB_MAKE_NULL (&charset);
-      error_status = db_string_trim (BOTH, &charset, expr, &trimed_expr);
+      error_status = db_string_trim (BOTH, NULL, expr, &trimed_expr);
       if (error_status != NO_ERROR)
 	{
 	  goto error;
