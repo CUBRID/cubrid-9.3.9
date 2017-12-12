@@ -1138,6 +1138,7 @@ parser_create_parser (void)
   parser->is_holdable = 0;
   parser->auto_param_count = 0;
   parser->return_generated_keys = 0;
+  parser->is_system_generated_stmt = 0;
 
   return parser;
 }
