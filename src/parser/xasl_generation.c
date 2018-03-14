@@ -19478,7 +19478,8 @@ pt_to_upd_del_query (PARSER_CONTEXT * parser, PT_NODE * select_names,
 		     PT_NODE * from, PT_NODE * class_specs,
 		     PT_NODE * where, PT_NODE * using_index,
 		     PT_NODE * order_by, PT_NODE * orderby_for, int server_op,
-		     PT_COMPOSITE_LOCKING composite_locking)
+		     PT_COMPOSITE_LOCKING composite_locking,
+                 SCAN_OPERATION_TYPE scan_op_type)
 {
   PT_NODE *statement = NULL, *from_temp = NULL, *node = NULL;
   PT_NODE *save_next = NULL, *spec = NULL;
@@ -19488,8 +19489,32 @@ pt_to_upd_del_query (PARSER_CONTEXT * parser, PT_NODE * select_names,
   statement = parser_new_node (parser, PT_SELECT);
   if (statement != NULL)
     {
+      /* this is an internally built query */
+      PT_SELECT_INFO_SET_FLAG (statement, PT_SELECT_INFO_IS_UPD_DEL_QUERY);
+
       statement->info.query.q.select.list =
 	parser_copy_tree_list (parser, select_list);
+
+      if (scan_op_type == S_UPDATE)
+        {
+          /* The system generated select was "SELECT ..., rhs1, rhs2, ... FROM table ...".
+           * When two different updates set different sets of attrs, generated select was lead to one XASL entry.
+           * This causes unexpected issues of reusing an XASL entry, e.g, mismatched types.
+           *
+           * Uses lhs of an assignment as its column alias:
+           * For example, "UPDATE t SET x = ?, y = ?;" will generate "SELECT ..., ? AS x, ? AS y FROM t;".
+           *
+           * pt_print_select will print aliases as well as values for the system generated select queries.
+           */
+
+          PT_NODE *lhs, *rhs;
+    
+          for (rhs = statement->info.query.q.select.list, lhs = select_names;
+               rhs != NULL && lhs != NULL; rhs = rhs->next, lhs = lhs->next)
+            {
+              rhs->alias_print = parser_print_tree (parser, lhs);
+            }
+        }
 
       statement->info.query.q.select.from =
 	parser_copy_tree_list (parser, from);
@@ -19867,7 +19892,7 @@ pt_to_delete_xasl (PARSER_CONTEXT * parser, PT_NODE * statement)
 						  from, class_specs,
 						  where, using_index,
 						  NULL, NULL, 1,
-						  PT_COMPOSITE_LOCKING_DELETE))
+						  PT_COMPOSITE_LOCKING_DELETE, S_DELETE))
 	   == NULL)
 	  || pt_copy_upddel_hints_to_select (parser, statement,
 					     aptr_statement) != NO_ERROR
@@ -20271,7 +20296,7 @@ pt_to_update_xasl (PARSER_CONTEXT * parser, PT_NODE * statement,
   aptr_statement =
     pt_to_upd_del_query (parser, select_names, select_values, from,
 			 class_specs, where, using_index, order_by,
-			 orderby_for, 1, PT_COMPOSITE_LOCKING_UPDATE);
+			 orderby_for, 1, PT_COMPOSITE_LOCKING_UPDATE, S_UPDATE);
   /* restore assignment list here because we need to iterate through
    * assignments later*/
   pt_restore_assignment_links (statement->info.update.assignment, links, -1);

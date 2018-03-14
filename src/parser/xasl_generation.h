@@ -142,7 +142,8 @@ extern PT_NODE *pt_to_upd_del_query (PARSER_CONTEXT * parser,
 				     PT_NODE * using_index,
 				     PT_NODE * order_by,
 				     PT_NODE * orderby_for, int server_op,
-				     PT_COMPOSITE_LOCKING composite_locking);
+				     PT_COMPOSITE_LOCKING composite_locking,
+				     SCAN_OPERATION_TYPE scan_op_type);
 extern XASL_NODE *pt_to_insert_xasl (PARSER_CONTEXT * parser, PT_NODE * node);
 extern PRED_EXPR_WITH_CONTEXT *pt_to_pred_with_context (PARSER_CONTEXT *
 							parser,

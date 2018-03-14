@@ -2465,6 +2465,7 @@ struct pt_select_info
 #define PT_SELECT_INFO_FOR_UPDATE	2048	/* FOR UPDATE clause is active */
 #define PT_SELECT_INFO_DISABLE_LOOSE_SCAN   4096	/* loose scan not possible
 							   on query */
+#define PT_SELECT_INFO_IS_UPD_DEL_QUERY 8192    /* set if select was built for an UPDATE or DELETE statement */
 
 #define PT_SELECT_INFO_IS_FLAGED(s, f)  \
           ((s)->info.query.q.select.flag & (short) (f))
