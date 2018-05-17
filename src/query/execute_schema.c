@@ -3006,13 +3006,13 @@ do_alter_index (PARSER_CONTEXT * parser, const PT_NODE * statement)
   PT_NODE *cls = NULL;
   bool free_cls = false;
   int i, nnames;
-  DB_CONSTRAINT_TYPE ctype;
+  DB_CONSTRAINT_TYPE ctype, original_ctype;
   char **attnames = NULL;
   int *asc_desc = NULL;
   int *attrs_prefix_length = NULL;
   char *cname = NULL;
   SM_CLASS *smcls;
-  SM_CLASS_CONSTRAINT *idx;
+  SM_CLASS_CONSTRAINT *idx = NULL;
   SM_ATTRIBUTE **attp;
   int attnames_allocated = 0;
   const char *index_name = NULL;
@@ -3082,28 +3082,32 @@ do_alter_index (PARSER_CONTEXT * parser, const PT_NODE * statement)
       free_cls = false;
     }
 
-  ctype = get_reverse_unique_index_type (statement->info.index.reverse,
-					 statement->info.index.unique);
+  if (au_fetch_class (obj, &smcls, AU_FETCH_READ, AU_SELECT) != NO_ERROR)
+    {
+      error = er_errid ();
+      goto error_exit;
+    }
+
+  if ((idx = classobj_find_class_index (smcls, index_name)) == NULL)
+    {
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_SM_NO_INDEX, 1, index_name);
+      error = ER_SM_NO_INDEX;
+      goto error_exit;
+    }
+
+  original_ctype = db_constraint_type (idx);
+  if (original_ctype != DB_CONSTRAINT_PRIMARY_KEY)
+    {
+      ctype = get_reverse_unique_index_type (statement->info.index.reverse,
+					     statement->info.index.unique);
+    }
+  else
+    {
+      ctype = original_ctype;
+    }
 
   if (statement->info.index.column_names == NULL)
     {
-      /* find the attributes of the index */
-      idx = NULL;
-
-      if (au_fetch_class (obj, &smcls, AU_FETCH_READ, AU_SELECT) != NO_ERROR)
-	{
-	  error = er_errid ();
-	  goto error_exit;
-	}
-
-      if ((idx = classobj_find_class_index (smcls, index_name)) == NULL)
-	{
-	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE,
-		  ER_SM_NO_INDEX, 1, index_name);
-	  error = ER_SM_NO_INDEX;
-	  goto error_exit;
-	}
-
       attp = idx->attributes;
       if (attp == NULL)
 	{

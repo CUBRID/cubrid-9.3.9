@@ -3605,7 +3605,7 @@ sboot_initialize_server (THREAD_ENTRY * thread_p, unsigned int rid,
   OR_ALIGNED_BUF (OR_INT_SIZE + OR_OID_SIZE + OR_HFID_SIZE) a_reply;
   char *reply = OR_ALIGNED_BUF_START (a_reply);
 
-  memset (&client_credential, sizeof (client_credential), 0);
+  memset (&client_credential, 0, sizeof (client_credential));
   ptr = or_unpack_int (request, &xint);
   client_credential.client_type = (BOOT_CLIENT_TYPE) xint;
   ptr = or_unpack_string_nocopy (ptr, &client_credential.client_info);
@@ -3621,7 +3621,7 @@ sboot_initialize_server (THREAD_ENTRY * thread_p, unsigned int rid,
   ptr = or_unpack_int (ptr, &db_npages);
   ptr = or_unpack_int (ptr, &db_desired_log_page_size);
   ptr = or_unpack_int (ptr, &log_npages);
-  memset (&db_path_info, sizeof (db_path_info), 0);
+  memset (&db_path_info, 0, sizeof (db_path_info));
   ptr = or_unpack_string_nocopy (ptr, &db_path_info.db_path);
   ptr = or_unpack_string_nocopy (ptr, &db_path_info.vol_path);
   ptr = or_unpack_string_nocopy (ptr, &db_path_info.log_path);
@@ -3682,8 +3682,8 @@ sboot_register_client (THREAD_ENTRY * thread_p, unsigned int rid,
 
   reply = OR_ALIGNED_BUF_START (a_reply);
 
-  memset (&client_credential, sizeof (client_credential), 0);
-  memset (&server_credential, sizeof (server_credential), 0);
+  memset (&client_credential, 0, sizeof (client_credential));
+  memset (&server_credential, 0, sizeof (server_credential));
 
   ptr = or_unpack_int (request, &xint);
   client_credential.client_type = (BOOT_CLIENT_TYPE) xint;

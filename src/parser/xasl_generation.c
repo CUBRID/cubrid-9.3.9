@@ -3508,6 +3508,28 @@ pt_has_modified_class_helper (PARSER_CONTEXT * parser, PT_NODE * node,
 }
 
 /*
+ * pt_set_is_system_generated_stmt () -
+ *   return:
+ *   parser(in):
+ *   tree(in):
+ *   void_arg(in):
+ *   continue_walk(in):
+ */
+static PT_NODE *
+pt_set_is_system_generated_stmt (PARSER_CONTEXT * parser, PT_NODE * tree, void *void_arg, int *continue_walk)
+{
+  if (PT_IS_QUERY_NODE_TYPE (tree->node_type))
+    {
+      bool is_system_generated_stmt;
+
+      is_system_generated_stmt = *(bool *) void_arg;
+      tree->is_system_generated_stmt = is_system_generated_stmt;
+    }
+
+  return tree;
+}
+
+/*
  * pt_flush_class_and_null_xasl () - Flushes each class encountered
  * 	Partition pruning is applied to PT_SELECT nodes
  *   return:
@@ -8818,54 +8840,29 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  break;
 
 		case PT_LTRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
 		      break;
 		    }
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_LTRIM, domain);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_RTRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
 		      break;
 		    }
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_RTRIM, domain);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_FROM_UNIXTIME:
@@ -8886,41 +8883,15 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  break;
 
 		case PT_LPAD:
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r3 = (node->info.expr.arg3)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg3,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg3, unbox) : NULL;
 		  regu = pt_make_regu_arith (r1, r2, r3, T_LPAD, domain);
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_RPAD:
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r3 = (node->info.expr.arg3)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg3,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg3, unbox) : NULL;
 		  regu = pt_make_regu_arith (r1, r2, r3, T_RPAD, domain);
-		  if (node->info.expr.arg3 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_REPLACE:
@@ -9289,17 +9260,10 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  }
 
 		case PT_TRIM:
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      empty_str = pt_make_empty_string (parser, node);
-		    }
-
 		  r1 = pt_to_regu_variable (parser,
 					    node->info.expr.arg1, unbox);
 		  r2 = (node->info.expr.arg2)
-		    ? pt_to_regu_variable (parser, node->info.expr.arg2,
-					   unbox)
-		    : pt_to_regu_variable (parser, empty_str, unbox);
+		    ? pt_to_regu_variable (parser, node->info.expr.arg2, unbox) : NULL;
 		  domain = pt_xasl_node_to_domain (parser, node);
 		  if (domain == NULL)
 		    {
@@ -9308,12 +9272,6 @@ pt_to_regu_variable (PARSER_CONTEXT * parser, PT_NODE * node, UNBOX unbox)
 		  regu = pt_make_regu_arith (r1, r2, NULL, T_TRIM, domain);
 
 		  pt_to_misc_operand (regu, node->info.expr.qualifier);
-		  if (node->info.expr.arg2 == NULL)
-		    {
-		      parser_free_tree (parser, empty_str);
-		      REGU_VARIABLE_SET_FLAG (regu,
-					      REGU_VARIABLE_INFER_COLLATION);
-		    }
 		  break;
 
 		case PT_INST_NUM:
@@ -17341,8 +17299,10 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 {
   XASL_NODE *xasl;
   QO_PLAN *plan = NULL;
+  PT_NODE *spec;
   int level, trace_format;
   bool hint_ignored = false;
+  bool dump_plan;
 
   if (select_node->node_type != PT_SELECT)
     {
@@ -17427,30 +17387,34 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 	}
     }
 
+  qo_get_optimization_param (&level, QO_PARAM_LEVEL);
+  if (level >= 0x100 && !PT_SELECT_INFO_IS_FLAGED (select_node, PT_SELECT_INFO_COLS_SCHEMA)
+      && !PT_SELECT_INFO_IS_FLAGED (select_node, PT_SELECT_FULL_INFO_COLS_SCHEMA)
+      && !select_node->is_system_generated_stmt
+      && !((spec = select_node->info.query.q.select.from) != NULL
+     && spec->info.spec.derived_table_type == PT_IS_SHOWSTMT))
+    {
+      dump_plan = true;
+    }
+  else
+    {
+      dump_plan = false;
+    }
+
   /* Print out any needed post-optimization info.  Leave a way to find
    * out about environment info if we aren't able to produce a plan.
    * If this happens in the field at least we'll be able to glean some info */
-  qo_get_optimization_param (&level, QO_PARAM_LEVEL);
-  if (level >= 0x100 && plan)
+  if (plan != NULL && dump_plan == true)
     {
-      PT_NODE *spec;
-      if (!PT_SELECT_INFO_IS_FLAGED (select_node,
-				     PT_SELECT_INFO_COLS_SCHEMA) &&
-	  !PT_SELECT_INFO_IS_FLAGED (select_node,
-				     PT_SELECT_FULL_INFO_COLS_SCHEMA) &&
-	  !((spec = select_node->info.query.q.select.from) != NULL
-	    && spec->info.spec.derived_table_type == PT_IS_SHOWSTMT))
+      if (query_Plan_dump_fp == NULL)
 	{
-	  if (query_Plan_dump_fp == NULL)
-	    {
-	      query_Plan_dump_fp = stdout;
-	    }
-	  fputs ("\nQuery plan:\n", query_Plan_dump_fp);
-	  qo_plan_dump (plan, query_Plan_dump_fp);
+    query_Plan_dump_fp = stdout;
 	}
+      fputs ("\nQuery plan:\n", query_Plan_dump_fp);
+      qo_plan_dump (plan, query_Plan_dump_fp);
     }
 
-  if (level >= 0x100)
+  if (dump_plan == true)
     {
       unsigned int save_custom;
 
@@ -17529,7 +17493,7 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 	      sql_plan = pt_alloc_packing_buf (sizeloc + 1);
 	      if (sql_plan == NULL)
 		{
-		  goto error_exit;
+		  goto error;
 		}
 
 	      strncpy (sql_plan, ptr, sizeloc);
@@ -17548,7 +17512,7 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 	      contextp->sql_plan_text = parser_alloc (parser, size);
 	      if (contextp->sql_plan_text == NULL)
 		{
-		  goto error_exit;
+		  goto error;
 		}
 
 	      contextp->sql_plan_alloc_size = size;
@@ -17563,7 +17527,7 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 	      ptr = parser_alloc (parser, size);
 	      if (ptr == NULL)
 		{
-		  goto error_exit;
+		  goto error;
 		}
 
 	      ptr[0] = '\0';
@@ -17592,7 +17556,7 @@ pt_plan_query (PARSER_CONTEXT * parser, PT_NODE * select_node)
 	}
     }
 
-error_exit:
+error:
   if (plan != NULL)
     {
       qo_plan_discard (plan);
@@ -19368,6 +19332,9 @@ pt_copy_upddel_hints_to_select (PARSER_CONTEXT * parser, PT_NODE * node,
     default:
       return NO_ERROR;
     }
+
+  select_stmt->is_system_generated_stmt = node->is_system_generated_stmt;
+
   select_stmt->info.query.q.select.hint |= hint_flags;
   select_stmt->recompile = node->recompile;
 
@@ -19511,7 +19478,8 @@ pt_to_upd_del_query (PARSER_CONTEXT * parser, PT_NODE * select_names,
 		     PT_NODE * from, PT_NODE * class_specs,
 		     PT_NODE * where, PT_NODE * using_index,
 		     PT_NODE * order_by, PT_NODE * orderby_for, int server_op,
-		     PT_COMPOSITE_LOCKING composite_locking)
+		     PT_COMPOSITE_LOCKING composite_locking,
+                 SCAN_OPERATION_TYPE scan_op_type)
 {
   PT_NODE *statement = NULL, *from_temp = NULL, *node = NULL;
   PT_NODE *save_next = NULL, *spec = NULL;
@@ -19521,8 +19489,32 @@ pt_to_upd_del_query (PARSER_CONTEXT * parser, PT_NODE * select_names,
   statement = parser_new_node (parser, PT_SELECT);
   if (statement != NULL)
     {
+      /* this is an internally built query */
+      PT_SELECT_INFO_SET_FLAG (statement, PT_SELECT_INFO_IS_UPD_DEL_QUERY);
+
       statement->info.query.q.select.list =
 	parser_copy_tree_list (parser, select_list);
+
+      if (scan_op_type == S_UPDATE)
+        {
+          /* The system generated select was "SELECT ..., rhs1, rhs2, ... FROM table ...".
+           * When two different updates set different sets of attrs, generated select was lead to one XASL entry.
+           * This causes unexpected issues of reusing an XASL entry, e.g, mismatched types.
+           *
+           * Uses lhs of an assignment as its column alias:
+           * For example, "UPDATE t SET x = ?, y = ?;" will generate "SELECT ..., ? AS x, ? AS y FROM t;".
+           *
+           * pt_print_select will print aliases as well as values for the system generated select queries.
+           */
+
+          PT_NODE *lhs, *rhs;
+    
+          for (rhs = statement->info.query.q.select.list, lhs = select_names;
+               rhs != NULL && lhs != NULL; rhs = rhs->next, lhs = lhs->next)
+            {
+              rhs->alias_print = parser_print_tree (parser, lhs);
+            }
+        }
 
       statement->info.query.q.select.from =
 	parser_copy_tree_list (parser, from);
@@ -19900,7 +19892,7 @@ pt_to_delete_xasl (PARSER_CONTEXT * parser, PT_NODE * statement)
 						  from, class_specs,
 						  where, using_index,
 						  NULL, NULL, 1,
-						  PT_COMPOSITE_LOCKING_DELETE))
+						  PT_COMPOSITE_LOCKING_DELETE, S_DELETE))
 	   == NULL)
 	  || pt_copy_upddel_hints_to_select (parser, statement,
 					     aptr_statement) != NO_ERROR
@@ -20304,7 +20296,7 @@ pt_to_update_xasl (PARSER_CONTEXT * parser, PT_NODE * statement,
   aptr_statement =
     pt_to_upd_del_query (parser, select_names, select_values, from,
 			 class_specs, where, using_index, order_by,
-			 orderby_for, 1, PT_COMPOSITE_LOCKING_UPDATE);
+			 orderby_for, 1, PT_COMPOSITE_LOCKING_UPDATE, S_UPDATE);
   /* restore assignment list here because we need to iterate through
    * assignments later*/
   pt_restore_assignment_links (statement->info.update.assignment, links, -1);
@@ -20908,6 +20900,7 @@ parser_generate_xasl (PARSER_CONTEXT * parser, PT_NODE * node)
 {
   XASL_NODE *xasl = NULL;
   PT_NODE *next;
+  bool is_system_generated_stmt;
 
   assert (parser != NULL && node != NULL);
 
@@ -20915,8 +20908,12 @@ parser_generate_xasl (PARSER_CONTEXT * parser, PT_NODE * node)
   node->next = NULL;
   parser->dbval_cnt = 0;
 
+  is_system_generated_stmt = node->is_system_generated_stmt;
+
   node = parser_walk_tree (parser, node,
-			   pt_flush_class_and_null_xasl, NULL, NULL, NULL);
+        pt_flush_class_and_null_xasl, NULL,
+        pt_set_is_system_generated_stmt,
+        &is_system_generated_stmt);
 
   /* During the above parser_walk_tree the request to get a driver may cause a
      deadlock. We give up the following steps and propagate the error

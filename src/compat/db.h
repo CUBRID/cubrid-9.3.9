@@ -325,6 +325,7 @@ extern DB_SESSION *db_open_buffer_local (const char *buffer);
 extern int db_compile_statement_local (DB_SESSION * session);
 extern int db_execute_statement_local (DB_SESSION * session,
 				       int stmt, DB_QUERY_RESULT ** result);
+extern int db_set_system_generated_statement (DB_SESSION * session);
 extern void db_close_session_local (DB_SESSION * session);
 extern int db_savepoint_transaction_internal (const char *savepoint_name);
 extern int db_drop_set_attribute_domain (MOP class_,

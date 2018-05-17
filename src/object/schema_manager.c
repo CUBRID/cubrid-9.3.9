@@ -12949,6 +12949,7 @@ sm_delete_class_mop (MOP op)
   int is_partition = 0, subdel = 0;
   SM_CLASS_CONSTRAINT *pk;
   char *fk_name = NULL;
+  const char *table_name;
 
   if (op == NULL)
     {
@@ -13013,6 +13014,13 @@ sm_delete_class_mop (MOP op)
     {
       goto end;
     }
+
+  table_name = sm_class_name (op);
+  if (table_name == NULL)
+    {
+      goto end;
+    }
+
   error = lockhint_subclasses (NULL, class_);
   if (error != NO_ERROR)
     {
@@ -13183,6 +13191,13 @@ sm_delete_class_mop (MOP op)
    * it deletes them forever.
    */
   remove_class_triggers (op, class_);
+
+  /* now delete _db_auth tuples refers to the table */
+  error = au_delete_auth_of_dropping_table (table_name);
+  if (error != NO_ERROR)
+    {
+      goto end;
+    }
 
   /* This to be maintained as long as the class is cached in the workspace,
    * dirty or not. When the deleted class is flushed, the name is removed.
