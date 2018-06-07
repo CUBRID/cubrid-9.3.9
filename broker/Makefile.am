@@ -50,7 +50,8 @@ TESTER_LIBS = @CS_LIB@ @CCI_LIB@
 
 bin_PROGRAMS = cub_broker cubrid_broker cub_cas cub_proxy \
 	broker_monitor broker_changer broker_tester\
-	broker_log_converter broker_log_runner broker_log_top cubrid_replay
+	broker_log_converter broker_log_runner broker_log_top cubrid_replay \
+	cub_broker_bal cubrid_broker_bal cub_proxy_bal
 
 include_HEADERS = \
 	$(BROKER_DIR)/shard_key.h 
@@ -71,6 +72,21 @@ cub_broker_SOURCES = \
 	$(BROKER_DIR)/shard_shm.c \
 	$(BROKER_DIR)/broker_proxy_conn.c 
 cub_broker_LDADD = $(BROKER_CAS_LIBS)
+
+cub_broker_bal_SOURCES = \
+	$(BROKER_DIR)/balance.c \
+	$(BROKER_DIR)/broker_shm.c \
+	$(BROKER_DIR)/broker_error.c \
+	$(BROKER_DIR)/broker_util.c \
+	$(BROKER_DIR)/broker_process_size.c \
+	$(BROKER_DIR)/broker_max_heap.c \
+	$(BROKER_DIR)/broker_access_list.c \
+	$(BROKER_DIR)/broker_send_fd.c \
+	$(BROKER_DIR)/broker_filename.c \
+	$(BROKER_DIR)/balance_metadata.c \
+	$(BROKER_DIR)/balance_shm.c \
+	$(BROKER_DIR)/broker_proxy_conn.c 
+cub_broker_bal_LDADD = $(BROKER_CAS_LIBS)
 
 broker_monitor_SOURCES = \
 	$(BROKER_DIR)/broker_monitor.c \
@@ -122,6 +138,24 @@ cubrid_broker_SOURCES = \
 	$(BASE_DIR)/util_func.c
 cubrid_broker_LDADD = $(BROKER_CAS_LIBS)
 
+cubrid_broker_bal_SOURCES = \
+	$(BASE_DIR)/porting.c \
+	$(BROKER_DIR)/balance_config.c \
+	$(BROKER_DIR)/balance_admin.c \
+	$(BROKER_DIR)/broker_shm.c \
+	$(BROKER_DIR)/broker_error.c \
+	$(BROKER_DIR)/broker_util.c \
+	$(BROKER_DIR)/balance_admin_pub.c \
+	$(BROKER_DIR)/broker_process_size.c \
+	$(BROKER_DIR)/broker_max_heap.c \
+	$(BROKER_DIR)/broker_filename.c \
+	$(BROKER_DIR)/broker_acl.c \
+	$(BROKER_DIR)/balance_metadata.c \
+	$(BROKER_DIR)/balance_shm.c \
+	$(BROKER_DIR)/shard_key_func.c \
+	$(BASE_DIR)/util_func.c
+cubrid_broker_bal_LDADD = $(BROKER_CAS_LIBS)
+
 cub_cas_SOURCES = \
 	$(BROKER_DIR)/cas.c \
 	$(BROKER_DIR)/cas_network.c \
@@ -169,6 +203,30 @@ cub_proxy_SOURCES = \
 	$(BROKER_DIR)/cas_meta.c
 cub_proxy_CPPFLAGS = $(AM_CPPFLAGS) -DCUB_PROXY
 cub_proxy_LDADD = $(BROKER_CAS_LIBS)
+
+cub_proxy_bal_SOURCES = \
+	$(BROKER_DIR)/balance_proxy.c \
+	$(BROKER_DIR)/balance_proxy_io.c \
+	$(BROKER_DIR)/balance_proxy_function.c \
+	$(BROKER_DIR)/broker_recv_fd.c \
+	$(BROKER_DIR)/broker_process_size.c \
+	$(BROKER_DIR)/broker_shm.c \
+	$(BROKER_DIR)/broker_error.c \
+	$(BROKER_DIR)/broker_util.c \
+	$(BROKER_DIR)/balance_metadata.c \
+	$(BROKER_DIR)/cas_net_buf.c \
+	$(BROKER_DIR)/balance_statement.c \
+	$(BROKER_DIR)/balance_shm.c \
+	$(BROKER_DIR)/balance_proxy_queue.c \
+	$(BROKER_DIR)/balance_proxy_handler.c \
+	$(BROKER_DIR)/balance_parser.c \
+	$(BROKER_DIR)/balance_key_func.c \
+	$(BROKER_DIR)/balance_proxy_log.c \
+	$(BROKER_DIR)/cas_util.c \
+	$(BROKER_DIR)/broker_acl.c \
+	$(BROKER_DIR)/cas_meta.c
+cub_proxy_bal_CPPFLAGS = $(AM_CPPFLAGS) -DCUB_PROXY
+cub_proxy_bal_LDADD = $(BROKER_CAS_LIBS)
 
 
 broker_log_converter_SOURCES = \

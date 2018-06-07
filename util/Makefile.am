@@ -67,7 +67,8 @@ include_HEADERS = $(EXECUTABLE_DIR)/cubrid_esql.h
 
 bin_PROGRAMS = \
 	csql cub_master cub_server cubrid cub_admin cub_commdb \
-	cubrid_esql cubrid_rel loadjava migrate_91_to_92
+	cubrid_esql cubrid_rel loadjava migrate_91_to_92 \
+	cubrid_bal
 
 compat_PROGRAMS = \
 	addvoldb backupdb checkdb commdb compactdb copydb \
@@ -173,6 +174,11 @@ cubrid_SOURCES = \
 	$(EXECUTABLE_DIR)/util_service.c \
 	$(EXECUTABLE_DIR)/util_support.c
 cubrid_LDADD = @SA_LIB@
+
+cubrid_bal_SOURCES = \
+	$(EXECUTABLE_DIR)/util_balance.c \
+	$(EXECUTABLE_DIR)/util_support.c
+cubrid_bal_LDADD = @SA_LIB@
 
 cub_admin_SOURCES = \
 	$(EXECUTABLE_DIR)/util_admin.c \
