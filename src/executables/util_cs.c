@@ -205,12 +205,25 @@ backupdb (UTIL_FUNCTION_ARG * arg)
 	  backup_path = real_pathbuf;
 	}
 
-      if (stat (backup_path, &st_buf) != 0 || !S_ISDIR (st_buf.st_mode))
+      // accept directory and FIFO (named pipe) file as backup destination.
+      if (stat (backup_path, &st_buf) != 0)
 	{
 	  PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS,
 						 MSGCAT_UTIL_SET_BACKUPDB,
 						 BACKUPDB_INVALID_PATH));
 	  goto error_exit;
+	}
+      else if (!S_ISDIR (st_buf.st_mode))
+	{
+#if !defined (WINDOWS)
+	  // Unfortunately, Windows does not support FIFO file.
+	  if (!S_ISFIFO (st_buf.st_mode))
+#endif /* !WINDOWS */
+	    {
+	      PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_BACKUPDB,
+						     BACKUPDB_INVALID_PATH));
+	      goto error_exit;
+	    }
 	}
     }
 
@@ -225,84 +238,75 @@ backupdb (UTIL_FUNCTION_ARG * arg)
   db_set_client_type (DB_CLIENT_TYPE_ADMIN_UTILITY);
   db_login ("DBA", NULL);
 
-  if (db_restart (arg->command_name, TRUE, database_name) == NO_ERROR)
-    {
-      if (check)
-	{
-	  int check_flag = 0;
-
-	  check_flag |= CHECKDB_FILE_TRACKER_CHECK;
-	  check_flag |= CHECKDB_HEAP_CHECK_ALLHEAPS;
-	  check_flag |= CHECKDB_CT_CHECK_CAT_CONSISTENCY;
-	  check_flag |= CHECKDB_BTREE_CHECK_ALL_BTREES;
-	  check_flag |= CHECKDB_LC_CHECK_CLASSNAMES;
-
-	  if (db_set_isolation (TRAN_READ_COMMITTED) != NO_ERROR
-	      || boot_check_db_consistency (check_flag, 0, 0) != NO_ERROR)
-	    {
-	      const char *tmpname;
-	      if ((tmpname = er_get_msglog_filename ()) == NULL)
-		{
-		  tmpname = "/dev/null";
-		}
-	      PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS,
-						     MSGCAT_UTIL_SET_CHECKDB,
-						     CHECKDB_MSG_INCONSISTENT),
-				     tmpname);
-	      db_shutdown ();
-	      goto error_exit;
-	    }
-	}
-
-      /* some other utilities may need interrupt handler too */
-      if (os_set_signal_handler (SIGINT,
-				 backupdb_sig_interrupt_handler) == SIG_ERR)
-	{
-	  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0);
-	  PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
-	  db_shutdown ();
-	  goto error_exit;
-	}
-
-      if (backup_verbose_file
-	  && *backup_verbose_file && *backup_verbose_file != '/')
-	{
-	  char dirname[PATH_MAX];
-
-	  /* resolve relative path */
-	  if (getcwd (dirname, PATH_MAX) != NULL)
-	    {
-	      snprintf (verbose_file_realpath, PATH_MAX - 1, "%s/%s", dirname,
-			backup_verbose_file);
-	      backup_verbose_file = verbose_file_realpath;
-	    }
-	}
-
-      if (boot_backup (backup_path, (FILEIO_BACKUP_LEVEL) backup_level,
-		       remove_log_archives, backup_verbose_file,
-		       backup_num_threads,
-		       backup_zip_method, backup_zip_level,
-		       skip_activelog, sleep_msecs) == NO_ERROR)
-	{
-	  if (db_commit_transaction () != NO_ERROR)
-	    {
-	      PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
-	    }
-	}
-      else
-	{
-	  PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
-	  db_shutdown ();
-	  goto error_exit;
-	}
-
-      db_shutdown ();
-    }
-  else
+  if (db_restart (arg->command_name, TRUE, database_name) != NO_ERROR)
     {
       PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
       goto error_exit;
     }
+
+  if (check)
+    {
+      int check_flag = 0;
+
+      check_flag |= CHECKDB_FILE_TRACKER_CHECK;
+      check_flag |= CHECKDB_HEAP_CHECK_ALLHEAPS;
+      check_flag |= CHECKDB_CT_CHECK_CAT_CONSISTENCY;
+      check_flag |= CHECKDB_BTREE_CHECK_ALL_BTREES;
+      check_flag |= CHECKDB_LC_CHECK_CLASSNAMES;
+
+      if (db_set_isolation (TRAN_READ_COMMITTED) != NO_ERROR
+	  || boot_check_db_consistency (check_flag, 0, 0) != NO_ERROR)
+	{
+	  const char *tmpname;
+
+	  tmpname = er_get_msglog_filename ();
+	  if (tmpname == NULL)
+	    {
+	      tmpname = "/dev/null";
+	    }
+	  PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_CHECKDB,
+						 CHECKDB_MSG_INCONSISTENT), tmpname);
+	  db_shutdown ();
+	  goto error_exit;
+	}
+    }
+
+  /* some other utilities may need interrupt handler too */
+  if (os_set_signal_handler (SIGINT, backupdb_sig_interrupt_handler) == SIG_ERR)
+    {
+      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0);
+      PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
+      db_shutdown ();
+      goto error_exit;
+    }
+
+  if (backup_verbose_file && *backup_verbose_file && *backup_verbose_file != '/')
+    {
+      char dirname[PATH_MAX];
+
+      /* resolve relative path */
+      if (getcwd (dirname, PATH_MAX) != NULL)
+	{
+	  snprintf (verbose_file_realpath, PATH_MAX - 1, "%s/%s", dirname, backup_verbose_file);
+	  backup_verbose_file = verbose_file_realpath;
+	}
+     }
+
+  if (boot_backup (backup_path, (FILEIO_BACKUP_LEVEL) backup_level, remove_log_archives, backup_verbose_file,
+		   backup_num_threads, backup_zip_method, backup_zip_level, skip_activelog, sleep_msecs) != NO_ERROR)
+    {
+      PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
+      db_shutdown ();
+      goto error_exit;
+    }
+
+  if (db_commit_transaction () != NO_ERROR)
+    {
+      PRINT_AND_LOG_ERR_MSG ("%s\n", db_error_string (3));
+    }
+
+  db_shutdown ();
+
   return EXIT_SUCCESS;
 
 print_backup_usage:
@@ -1620,25 +1624,27 @@ doesmatch_transaction (const ONE_TRAN_INFO * tran, int *tran_index_list,
 {
   int i;
 
-  if (isvalid_transaction (tran))
+  if (!isvalid_transaction (tran))
     {
-      if ((username != NULL && strcmp (tran->login_name, username) == 0)
-	  || (hostname != NULL && strcmp (tran->host_name, hostname) == 0)
-	  || (progname != NULL && strcmp (tran->program_name, progname) == 0)
-	  || (sql_id != NULL && tran->query_exec_info.sql_id != NULL
-	      && strcmp (tran->query_exec_info.sql_id, sql_id) == 0))
+       return false;
+    }
+
+  if ((username != NULL && strcmp (tran->login_name, username) == 0)
+      || (hostname != NULL && strcmp (tran->host_name, hostname) == 0)
+      || (progname != NULL && strcmp (tran->program_name, progname) == 0)
+      || (sql_id != NULL && tran->query_exec_info.sql_id != NULL && strcmp (tran->query_exec_info.sql_id, sql_id) == 0))
+    {
+      return true;
+    }
+
+  for (i = 0; i < index_list_size; i++)
+    {
+      if (tran->tran_index == tran_index_list[i])
 	{
 	  return true;
 	}
-
-      for (i = 0; i < index_list_size; i++)
-	{
-	  if (tran->tran_index == tran_index_list[i])
-	    {
-	      return true;
-	    }
-	}
     }
+
   return false;
 }
 

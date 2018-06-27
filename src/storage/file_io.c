@@ -6723,7 +6723,7 @@ fileio_initialize_backup (const char *db_full_name_p,
     {
       /*
        * ASSUME that everything else is a special file such as a
-       * raw device (character or block special file) which is
+       * FIFO file, a device(character or block special file) which is
        * not named for I/O purposes. That is, the name of the device or
        * regular file is used as the backup.
        */
