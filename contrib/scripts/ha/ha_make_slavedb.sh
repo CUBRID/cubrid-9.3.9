@@ -790,19 +790,19 @@ function copy_backup_db_from_target()
 	
 	# 1. check if the databases information is already registered.
 	echo -ne "\n - 1. check if the databases information is already registered.\n\n"
-	line=$(grep "^$db_name" $CUBRID_DATABASES/databases.txt) 
+	line=$(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt)
 	if [ -z "$line" ]; then
 		execute "mv -f $CUBRID_DATABASES/databases.txt $CUBRID_DATABASES/databases.txt.$now"
 		scp_cubrid_from $target_host "$CUBRID_DATABASES/databases.txt" "$CUBRID_DATABASES/."
 	else
 		echo -ne "\n - there is already $db_name information in $CUBRID_DATABASES/databases.txt" 
-		echo "[$current_host]$ grep $db_name $CUBRID_DATABASES/databases.txt" 
+		echo "[$current_host]$ grep -w $db_name $CUBRID_DATABASES/databases.txt"
 		echo "$line"
 	fi
 	
 	# 2. get db_vol_path and db_log_path from databases.txt.
 	echo -ne "\n - 2. get db_vol_path and db_log_path from databases.txt.\n\n"
-	line=($(grep "^$db_name" $CUBRID_DATABASES/databases.txt))
+	line=($(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt))
 	db_vol_path=${line[1]}
 	db_log_path=${line[3]}
 	if [ -z "$db_vol_path" -o -z "$db_log_path" ]; then
@@ -1005,7 +1005,7 @@ function copy_active_log_from_master()
 	# 3. copy archive log from target.
 	echo -ne "\n - 3. copy archive log from target.\n\n"
 	if [ -z $db_log_path ]; then
-		line=($(grep "^$db_name" $CUBRID_DATABASES/databases.txt))
+		line=($(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt))
 		db_log_path=${line[3]}
 	fi
 	scp_cubrid_from $master_host "$db_log_path/${db_name}_lgar[0-9]*" "$repl_log_path/."	
@@ -1044,7 +1044,7 @@ function copy_active_log_from_slave()
 	# 3. copy archive log from target.
 	echo -ne "\n - 3. copy archive log from target.\n\n"
 	if [ -z $db_log_path ]; then
-		line=($(grep "^$db_name" $CUBRID_DATABASES/databases.txt))
+		line=($(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt))
 		db_log_path=${line[3]}
 	fi
 	scp_cubrid_from $slave_host "$db_log_path/${db_name}_lgar[0-9]*" "$repl_log_path/."	
@@ -1083,7 +1083,7 @@ function copy_active_log_from_target()
 	# 3. copy archive log from target.
 	echo -ne "\n - 3. copy archive log from slave.\n\n"
 	if [ -z $db_log_path ]; then
-		line=($(grep "^$db_name" $CUBRID_DATABASES/databases.txt))
+		line=($(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt))
 		db_log_path=${line[3]}
 	fi
 	scp_cubrid_from $slave_host "$db_log_path/${db_name}_lgar[0-9]*" "$repl_log_path/."
@@ -1102,7 +1102,7 @@ function copy_active_log_from_target()
 	# 6. copy archive log from target.
 	echo -ne "\n - 6. copy archive log from master.\n\n"
 	if [ -z $db_log_path ]; then
-		line=($(grep "^$db_name" $CUBRID_DATABASES/databases.txt))
+		line=($(grep -w "^$db_name" $CUBRID_DATABASES/databases.txt))
 		db_log_path=${line[3]}
 	fi
 	scp_cubrid_from $master_host "$db_log_path/${db_name}_lgar[0-9]*" "$repl_log_path/."	
