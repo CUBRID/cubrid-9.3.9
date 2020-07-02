@@ -45,10 +45,8 @@
 #include "transaction_cl.h"
 #include "execute_schema.h"
 
-int get_class_mops (char **class_names, int num_class,
-						   MOP ** class_list, int *num_class_list);
-int get_class_mops_from_file (const char *input_filename, MOP ** class_list,
-									 int *num_class_mops);
+int get_class_mops (char **class_names, int num_class, MOP ** class_list, int *num_class_list);
+int get_class_mops_from_file (const char *input_filename, MOP ** class_list, int *num_class_mops);
 
 /*
  * get_num_requested_class - Get the number of class from specified
@@ -76,8 +74,7 @@ get_num_requested_class (const char *input_filename, int *num_class)
     }
 
   *num_class = 0;
-  while (fgets ((char *) buffer, DB_MAX_IDENTIFIER_LENGTH,
-        input_file) != NULL)
+  while (fgets ((char *) buffer, DB_MAX_IDENTIFIER_LENGTH, input_file) != NULL)
     {
       (*num_class)++;
     }
@@ -96,15 +93,13 @@ get_num_requested_class (const char *input_filename, int *num_class)
  *    num_class_list(out): pointer to returned number of mops
  */
 int
-get_class_mops (char **class_names, int num_class,
-		MOP ** class_list, int *num_class_list)
+get_class_mops (char **class_names, int num_class, MOP ** class_list, int *num_class_list)
 {
   int i, status = NO_ERROR;
   char downcase_class_name[SM_MAX_IDENTIFIER_LENGTH];
   DB_OBJECT *class_ = NULL;
 
-  if (class_names == NULL || num_class <= 0 || class_list == NULL ||
-      num_class_list == NULL)
+  if (class_names == NULL || num_class <= 0 || class_list == NULL || num_class_list == NULL)
     {
       return ER_FAILED;
     }
@@ -129,8 +124,7 @@ get_class_mops (char **class_names, int num_class,
 	  goto error;
 	}
 
-      sm_downcase_name (class_names[i], downcase_class_name,
-			SM_MAX_IDENTIFIER_LENGTH);
+      sm_downcase_name (class_names[i], downcase_class_name, SM_MAX_IDENTIFIER_LENGTH);
 
       class_ = locator_find_class (downcase_class_name);
       if (class_ != NULL)
@@ -141,12 +135,9 @@ get_class_mops (char **class_names, int num_class,
       else
 	{
 	  printf (msgcat_message (MSGCAT_CATALOG_UTILS,
-				  MSGCAT_UTIL_SET_COMPACTDB,
-				  COMPACTDB_MSG_CLASS), downcase_class_name);
+				  MSGCAT_UTIL_SET_COMPACTDB, COMPACTDB_MSG_CLASS), downcase_class_name);
 
-	  printf (msgcat_message (MSGCAT_CATALOG_UTILS,
-				  MSGCAT_UTIL_SET_COMPACTDB,
-				  COMPACTDB_MSG_INVALID_CLASS));
+	  printf (msgcat_message (MSGCAT_CATALOG_UTILS, MSGCAT_UTIL_SET_COMPACTDB, COMPACTDB_MSG_INVALID_CLASS));
 	}
     }
 
@@ -175,8 +166,7 @@ error:
  *    num_class_mops(out): pointer to returned number of mops
  */
 int
-get_class_mops_from_file (const char *input_filename, MOP ** class_list,
-			  int *num_class_mops)
+get_class_mops_from_file (const char *input_filename, MOP ** class_list, int *num_class_mops)
 {
   int status = NO_ERROR;
   int i = 0, j = 0;
@@ -223,8 +213,7 @@ get_class_mops_from_file (const char *input_filename, MOP ** class_list,
 
   for (i = 0; i < num_class; ++i)
     {
-      if (fgets ((char *) buffer, DB_MAX_IDENTIFIER_LENGTH, input_file) ==
-	  NULL)
+      if (fgets ((char *) buffer, DB_MAX_IDENTIFIER_LENGTH, input_file) == NULL)
 	{
 	  status = ER_FAILED;
 	  goto end;
@@ -257,8 +246,7 @@ get_class_mops_from_file (const char *input_filename, MOP ** class_list,
       class_names[i][len] = 0;
     }
 
-  status = get_class_mops (class_names, num_class, class_list,
-			   num_class_mops);
+  status = get_class_mops (class_names, num_class, class_list, num_class_mops);
 
 end:
 

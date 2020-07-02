@@ -1410,12 +1410,9 @@ extern int check_database_name (const char *name);
 extern int check_new_database_name (const char *name);
 extern int check_volume_name (const char *name);
 extern int utility_get_option_int_value (UTIL_ARG_MAP * arg_map, int arg_ch);
-extern bool utility_get_option_bool_value (UTIL_ARG_MAP * arg_map,
-					   int arg_ch);
-extern char *utility_get_option_string_value (UTIL_ARG_MAP * arg_map,
-					      int arg_ch, int index);
-extern INT64 utility_get_option_bigint_value (UTIL_ARG_MAP * arg_map,
-					      int arg_ch);
+extern bool utility_get_option_bool_value (UTIL_ARG_MAP * arg_map, int arg_ch);
+extern char *utility_get_option_string_value (UTIL_ARG_MAP * arg_map, int arg_ch, int index);
+extern INT64 utility_get_option_bigint_value (UTIL_ARG_MAP * arg_map, int arg_ch);
 extern int utility_get_option_string_table_size (UTIL_ARG_MAP * arg_map);
 
 extern FILE *fopen_ex (const char *filename, const char *type);
@@ -1444,10 +1441,8 @@ typedef struct
 extern int changemode_keyword (int *keyval_p, char **keystr_p);
 extern int copylogdb_keyword (int *keyval_p, char **keystr_p);
 
-extern int utility_keyword_value (UTIL_KEYWORD * keywords,
-				  int *keyval_p, char **keystr_p);
-extern int utility_keyword_search (UTIL_KEYWORD * keywords, int *keyval_p,
-				   char **keystr_p);
+extern int utility_keyword_value (UTIL_KEYWORD * keywords, int *keyval_p, char **keystr_p);
+extern int utility_keyword_search (UTIL_KEYWORD * keywords, int *keyval_p, char **keystr_p);
 
 extern int utility_localtime (const time_t * ts, struct tm *result);
 

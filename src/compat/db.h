@@ -254,8 +254,7 @@ extern int db_init (const char *program, int print_version,
 		    const bool overwrite, const char *comments,
 		    const char *addmore_vols_file,
 		    int npages, int desired_pagesize,
-		    int log_npages, int desired_log_page_size,
-		    const char *lang_charset);
+		    int log_npages, int desired_log_page_size, const char *lang_charset);
 
 extern int db_parse_one_statement (DB_SESSION * session);
 #ifdef __cplusplus
@@ -267,8 +266,7 @@ extern "C"
 }
 #endif
 extern int db_get_parser_line_col (DB_SESSION * session, int *line, int *col);
-extern int db_get_line_col_of_1st_error (DB_SESSION * session,
-					 DB_QUERY_ERROR * linecol);
+extern int db_get_line_col_of_1st_error (DB_SESSION * session, DB_QUERY_ERROR * linecol);
 extern DB_VALUE *db_get_hostvars (DB_SESSION * session);
 extern char **db_get_lock_classes (DB_SESSION * session);
 extern void db_drop_all_statements (DB_SESSION * session);
@@ -295,44 +293,30 @@ extern int db_value_put_db_data (DB_VALUE * value, const DB_DATA * data);
 #endif
 extern DB_DATA *db_value_get_db_data (DB_VALUE * value);
 extern int db_make_db_char (DB_VALUE * value, INTL_CODESET codeset,
-			    const int collation_id, const char *str,
-			    const int size);
+			    const int collation_id, const char *str, const int size);
 
 extern DB_OBJECT *db_create_internal (DB_OBJECT * obj);
 extern DB_OBJECT *db_create_by_name_internal (const char *name);
-extern int db_put_internal (DB_OBJECT * obj, const char *name,
-			    DB_VALUE * value);
+extern int db_put_internal (DB_OBJECT * obj, const char *name, DB_VALUE * value);
 extern DB_OTMPL *dbt_create_object_internal (DB_OBJECT * classobj);
-extern int dbt_put_internal (DB_OTMPL * def, const char *name,
-			     DB_VALUE * value);
-extern int db_dput_internal (DB_OBJECT * obj,
-			     DB_ATTDESC * attribute, DB_VALUE * value);
-extern int dbt_dput_internal (DB_OTMPL * def,
-			      DB_ATTDESC * attribute, DB_VALUE * value);
+extern int dbt_put_internal (DB_OTMPL * def, const char *name, DB_VALUE * value);
+extern int db_dput_internal (DB_OBJECT * obj, DB_ATTDESC * attribute, DB_VALUE * value);
+extern int dbt_dput_internal (DB_OTMPL * def, DB_ATTDESC * attribute, DB_VALUE * value);
 extern DB_DOMAIN *db_attdesc_domain (DB_ATTDESC * desc);
 
 extern int db_add_super_internal (DB_OBJECT * classobj, DB_OBJECT * super);
 extern int db_add_attribute_internal (MOP class_, const char *name,
-				      const char *domain,
-				      DB_VALUE * default_value,
-				      SM_NAME_SPACE name_space);
-extern int db_rename_internal (DB_OBJECT * classobj,
-			       const char *name,
-			       int class_namespace, const char *newname);
-extern int db_drop_attribute_internal (DB_OBJECT * classobj,
-				       const char *name);
+				      const char *domain, DB_VALUE * default_value, SM_NAME_SPACE name_space);
+extern int db_rename_internal (DB_OBJECT * classobj, const char *name, int class_namespace, const char *newname);
+extern int db_drop_attribute_internal (DB_OBJECT * classobj, const char *name);
 extern void db_set_sync_flag (DB_SESSION * session, QUERY_EXEC_MODE flag);
 extern DB_SESSION *db_open_buffer_local (const char *buffer);
 extern int db_compile_statement_local (DB_SESSION * session);
-extern int db_execute_statement_local (DB_SESSION * session,
-				       int stmt, DB_QUERY_RESULT ** result);
+extern int db_execute_statement_local (DB_SESSION * session, int stmt, DB_QUERY_RESULT ** result);
 extern int db_set_system_generated_statement (DB_SESSION * session);
 extern void db_close_session_local (DB_SESSION * session);
 extern int db_savepoint_transaction_internal (const char *savepoint_name);
-extern int db_drop_set_attribute_domain (MOP class_,
-					 const char *name,
-					 int class_attribute,
-					 const char *domain);
+extern int db_drop_set_attribute_domain (MOP class_, const char *name, int class_attribute, const char *domain);
 extern BTID *db_constraint_index (DB_CONSTRAINT * constraint, BTID * index);
 
 extern int db_col_optimize (DB_COLLECTION * col);
