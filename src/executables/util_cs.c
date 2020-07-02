@@ -100,8 +100,7 @@ static void backupdb_sig_interrupt_handler (int sig_no);
 static int spacedb_get_size_str (char *buf, UINT64 num_pages,
 				 T_SPACEDB_SIZE_UNIT size_unit);
 static void print_timestamp (FILE * outfp);
-static int print_tran_entry (const ONE_TRAN_INFO * tran_info,
-			     TRANDUMP_LEVEL dump_level);
+static int print_tran_entry (const ONE_TRAN_INFO * tran_info, TRANDUMP_LEVEL dump_level, bool full_sqltext);
 static int tranlist_cmp_f (const void *p1, const void *p2);
 
 /*
@@ -1656,7 +1655,7 @@ doesmatch_transaction (const ONE_TRAN_INFO * tran, int *tran_index_list,
  *   dump_level(in) :
  */
 static void
-dump_trantb (TRANS_INFO * info, TRANDUMP_LEVEL dump_level)
+dump_trantb (TRANS_INFO * info, TRANDUMP_LEVEL dump_level, bool full_sqltext)
 {
   int i;
   int num_valid = 0;
@@ -1699,7 +1698,7 @@ dump_trantb (TRANS_INFO * info, TRANDUMP_LEVEL dump_level)
 		}
 
 	      num_valid++;
-	      print_tran_entry (&info->tran[i], dump_level);
+	      print_tran_entry (&info->tran[i], dump_level, full_sqltext);
 	    }
 	}
     }
@@ -1857,7 +1856,7 @@ kill_transactions (TRANS_INFO * info, int *tran_index_list, int list_size,
 					 list_size, username, hostname,
 					 progname, sql_id))
 		{
-		  print_tran_entry (&info->tran[i], dump_level);
+		  print_tran_entry (&info->tran[i], dump_level, false);
 		}
 	    }
 	  fprintf (stdout, msgcat_message (MSGCAT_CATALOG_UTILS,
@@ -1918,7 +1917,7 @@ kill_transactions (TRANS_INFO * info, int *tran_index_list, int list_size,
 						   underscore));
 			}
 
-		      print_tran_entry (&info->tran[i], dump_level);
+		      print_tran_entry (&info->tran[i], dump_level, false);
 
 		      if (er_errid () != NO_ERROR)
 			{
@@ -1955,10 +1954,11 @@ kill_transactions (TRANS_INFO * info, int *tran_index_list, int list_size,
  *   include_query_info(in) :
  */
 static int
-print_tran_entry (const ONE_TRAN_INFO * tran_info, TRANDUMP_LEVEL dump_level)
+print_tran_entry (const ONE_TRAN_INFO * tran_info, TRANDUMP_LEVEL dump_level, bool full_sqltext)
 {
   char *buf = NULL;
-  char query_buf[32];
+  char *query_buf;
+  char tmp_query_buf[32];
 
   if (tran_info == NULL)
     {
@@ -1975,8 +1975,16 @@ print_tran_entry (const ONE_TRAN_INFO * tran_info, TRANDUMP_LEVEL dump_level)
       if (tran_info->query_exec_info.query_stmt != NULL)
 	{
 	  /* print 31 string */
-	  strncpy (query_buf, tran_info->query_exec_info.query_stmt, 32);
-	  query_buf[31] = '\0';
+	  if (full_sqltext == true)
+	    {
+	      query_buf = tran_info->query_exec_info.query_stmt;
+	    }
+	  else
+	    {
+	      strncpy (tmp_query_buf, tran_info->query_exec_info.query_stmt, 32);
+	      tmp_query_buf[31] = '\0';
+	      query_buf = tmp_query_buf;
+	    }
 	}
     }
 
@@ -2042,7 +2050,7 @@ tranlist (UTIL_FUNCTION_ARG * arg)
   char *passbuf = NULL;
   TRANS_INFO *info = NULL;
   int error;
-  bool is_summary, include_query_info;
+  bool is_summary, include_query_info, full_sqltext = false;
   TRANDUMP_LEVEL dump_level = TRANDUMP_FULL_INFO;
 
   if (utility_get_option_string_table_size (arg_map) != 1)
@@ -2065,6 +2073,7 @@ tranlist (UTIL_FUNCTION_ARG * arg)
     utility_get_option_int_value (arg_map, TRANLIST_SORT_KEY_S);
   tranlist_Sort_desc =
     utility_get_option_bool_value (arg_map, TRANLIST_REVERSE_S);
+  full_sqltext = utility_get_option_bool_value (arg_map, TRANLIST_FULL_SQL_S);
 
   if (username == NULL)
     {
@@ -2170,7 +2179,7 @@ tranlist (UTIL_FUNCTION_ARG * arg)
 	     sizeof (ONE_TRAN_INFO), tranlist_cmp_f);
     }
 
-  (void) dump_trantb (info, dump_level);
+  (void) dump_trantb (info, dump_level, full_sqltext);
 
   if (info)
     {
@@ -2377,7 +2386,7 @@ killtran (UTIL_FUNCTION_ARG * arg)
 
       dump_level =
 	(include_query_exec_info) ? TRANDUMP_QUERY_INFO : TRANDUMP_SUMMARY;
-      dump_trantb (info, dump_level);
+      dump_trantb (info, dump_level, false);
     }
   else
     {
