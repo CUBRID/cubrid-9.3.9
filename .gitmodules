@@ -1,3 +1,4 @@
 [submodule "cubridmanager"]
 	path = cubridmanager
 	url = git@github.com:CUBRID/cubrid-manager-server-9.3.0.git
+	branch = develop
