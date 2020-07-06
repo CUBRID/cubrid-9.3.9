@@ -99,7 +99,7 @@ int
 get_class_mops (char **class_names, int num_class,
 		MOP ** class_list, int *num_class_list)
 {
-  int i, status = NO_ERROR;
+  int i;
   char downcase_class_name[SM_MAX_IDENTIFIER_LENGTH];
   DB_OBJECT *class_ = NULL;
 
@@ -125,7 +125,6 @@ get_class_mops (char **class_names, int num_class,
     {
       if (class_names[i] == NULL || strlen (class_names[i]) == 0)
 	{
-	  status = ER_FAILED;
 	  goto error;
 	}
 
@@ -150,7 +149,7 @@ get_class_mops (char **class_names, int num_class,
 	}
     }
 
-  return status;
+  return NO_ERROR;
 
 error:
   if (*class_list)
@@ -164,7 +163,7 @@ error:
       *num_class_list = 0;
     }
 
-  return status;
+  return ER_FAILED;
 }
 
 /*
