@@ -49,7 +49,8 @@ enum boot_client_type
   BOOT_CLIENT_SO_BROKER_REPLICA_ONLY = 13,
   BOOT_CLIENT_ADMIN_CSQL_WOS = 14,	/* admin csql that can write on standby */
   BOOT_CLIENT_LOG_PREFETCHER = 15,
-  BOOT_CLIENT_LOG_APPLIER_PLUGIN = 16
+  BOOT_CLIENT_LOG_APPLIER_PLUGIN = 16,
+  BOOT_CLIENT_ADMIN_COMPACTDB_WOS = 17
 };
 
 #define BOOT_NORMAL_CLIENT_TYPE(client_type) \
@@ -70,6 +71,7 @@ enum boot_client_type
 
 #define BOOT_ADMIN_CLIENT_TYPE(client_type) \
         ((client_type) == BOOT_CLIENT_ADMIN_UTILITY \
+         || (client_type) == BOOT_CLIENT_ADMIN_COMPACTDB_WOS \
          || (client_type) == BOOT_CLIENT_ADMIN_CSQL \
          || (client_type) == BOOT_CLIENT_ADMIN_CSQL_WOS)
 
@@ -101,7 +103,8 @@ enum boot_client_type
   ((client_type) == BOOT_CLIENT_LOG_APPLIER \
       || (client_type) == BOOT_CLIENT_LOG_APPLIER_PLUGIN \
       || (client_type) == BOOT_CLIENT_RW_BROKER_REPLICA_ONLY \
-      || (client_type) == BOOT_CLIENT_ADMIN_CSQL_WOS)
+      || (client_type) == BOOT_CLIENT_ADMIN_CSQL_WOS \
+      || (client_type) == BOOT_CLIENT_ADMIN_COMPACTDB_WOS)
 
 /*
  * BOOT_IS_ALLOWED_CLIENT_TYPE_IN_MT_MODE()

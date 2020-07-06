@@ -57,7 +57,7 @@ static int failed_objects = 0;
 static RECDES *Diskrec = NULL;
 static LIST_MOPS *class_table;
 
-static int compactdb_start (bool verbose_flag);
+static int compactdb_start (bool verbose_flag, char *input_filename, char **input_class_names, int input_class_length);
 static void process_class (DB_OBJECT * class_, bool verbose_flag);
 static void process_object (DESC_OBJ * desc_obj, OID * obj_oid,
 			    bool verbose_flag);
@@ -71,7 +71,10 @@ static void disk_init (void);
 static void disk_final (void);
 static int update_indexes (OID * class_oid, OID * obj_oid, RECDES * rec);
 static void compact_usage (const char *argv0);
-
+extern int get_class_mops (char **class_names, int num_class,
+                  MOP ** class_list, int *num_class_list);
+extern int get_class_mops_from_file (const char *input_filename, MOP ** class_list,
+                  int *num_class_mops);
 
 /*
  * compact_usage() - print an usage of the backup-utility
@@ -103,17 +106,48 @@ compactdb (UTIL_FUNCTION_ARG * arg)
   int status = 0;
   const char *database_name;
   bool verbose_flag = 0;
+  char *input_filename = NULL;
+  char **tables = NULL;
+  int table_size = 0;
+  int i = 0;
 
   database_name =
     utility_get_option_string_value (arg_map, OPTION_STRING_TABLE, 0);
   verbose_flag = utility_get_option_bool_value (arg_map, COMPACT_VERBOSE_S);
 
   if (database_name == NULL || database_name[0] == '\0'
-      || utility_get_option_string_table_size (arg_map) != 1)
+      || utility_get_option_string_table_size (arg_map) < 1)
     {
       compact_usage (arg->argv0);
       return ER_GENERIC_ERROR;
     }
+
+  input_filename =
+    utility_get_option_string_value (arg_map, COMPACT_INPUT_CLASS_FILE_S, 0);
+
+  table_size = utility_get_option_string_table_size (arg_map);
+  if (table_size > 1 && input_filename != NULL)
+  {
+    compact_usage(arg->argv0);
+    return ER_GENERIC_ERROR;
+  }
+  else if (table_size > 1)
+  {
+    tables = (char **) malloc (sizeof (char *) * (table_size - 1));
+    if (tables == NULL)
+    {
+        PRINT_AND_LOG_ERR_MSG (msgcat_message (MSGCAT_CATALOG_UTILS,
+                                           MSGCAT_UTIL_SET_COMPACTDB,
+                                           COMPACTDB_MSG_FAILURE));
+        return ER_GENERIC_ERROR;
+    }
+
+    for (i = 1; i < table_size; i++)
+    {
+        tables[i - 1] = utility_get_option_string_value
+          (arg_map, OPTION_STRING_TABLE, i);
+    }
+  }
 
   sysprm_set_force (prm_get_name (PRM_ID_JAVA_STORED_PROCEDURE), "no");
 
@@ -127,7 +161,7 @@ compactdb (UTIL_FUNCTION_ARG * arg)
     }
   else
     {
-      status = compactdb_start (verbose_flag);
+      status = compactdb_start (verbose_flag, input_filename, tables, table_size-1);
       if (status != 0)
 	{
 	  util_log_write_errstr ("%s\n", db_error_string (3));
@@ -147,21 +181,54 @@ compactdb (UTIL_FUNCTION_ARG * arg)
  *    verbose_flag(in)
  */
 static int
-compactdb_start (bool verbose_flag)
+compactdb_start (bool verbose_flag, char *input_filename, char **input_class_names, int input_class_length)
 {
   int i;
   SM_CLASS *class_ptr;
   HFID *hfid;
   int status = 0;
+  MOP *class_mops = NULL;
+  int num_class_mops = 0;
+  bool skip_phase3=false;
 
   /*
    * Build class name table
    */
-  class_table = locator_get_all_mops (sm_Root_class_mop, DB_FETCH_QUERY_READ);
-  if (class_table == NULL)
+  if (input_filename && input_class_names && input_class_length > 0)
+  {
+    return ER_FAILED;
+  }
+
+  if (input_class_names && input_class_length > 0)
+  {
+    status = get_class_mops (input_class_names, input_class_length,
+                             &class_mops, &num_class_mops);
+    if (status != NO_ERROR)
     {
-      return 1;
+        goto clean;
     }
+    skip_phase3=true;
+  }
+  else if (input_filename)
+  {
+    status = get_class_mops_from_file (input_filename, &class_mops,
+                                         &num_class_mops);
+    if (status != NO_ERROR)
+      {
+        goto clean;
+      }
+      skip_phase3=true;
+    }
+  else
+  {
+    class_table = locator_get_all_mops (sm_Root_class_mop, DB_FETCH_QUERY_READ);
+    if (class_table == NULL)
+    {
+        goto clean;
+    }
+    num_class_mops = class_table->num;
+    class_mops = class_table->mops;
+  }
 
   if (prm_get_integer_value (PRM_ID_COMPACTDB_PAGE_RECLAIM_ONLY) == 1)
     {
@@ -183,13 +250,13 @@ compactdb_start (bool verbose_flag)
    * Dump the object definitions
    */
   disk_init ();
-  for (i = 0; i < class_table->num; i++)
+  for (i = 0; i < num_class_mops; i++)
     {
-      if (!WS_MARKED_DELETED (class_table->mops[i]) &&
-	  class_table->mops[i] != sm_Root_class_mop)
-	{
-	  process_class (class_table->mops[i], verbose_flag);
-	}
+      if (!WS_MARKED_DELETED (class_mops[i]) &&
+          class_mops[i] != sm_Root_class_mop)
+        {
+          process_class (class_mops[i], verbose_flag);
+        }
     }
   disk_final ();
 
@@ -225,9 +292,9 @@ phase2:
 			      COMPACTDB_MSG_PASS2));
     }
 
-  for (i = 0; i < class_table->num; i++)
+  for (i = 0; i < num_class_mops; i++)
     {
-      ws_find (class_table->mops[i], (MOBJ *) (&class_ptr));
+      ws_find (class_mops[i], (MOBJ *) (&class_ptr));
       if (class_ptr == NULL)
 	{
 	  continue;
@@ -250,6 +317,18 @@ phase2:
     }
 
 phase3:
+  if (skip_phase3) {
+      goto clean;
+    }
+
+  if (verbose_flag)
+    {
+      printf ("\n");
+      printf (msgcat_message (MSGCAT_CATALOG_UTILS,
+                              MSGCAT_UTIL_SET_COMPACTDB,
+                              COMPACTDB_MSG_PASS3));
+    }
+
   catalog_reclaim_space (NULL);
   db_commit_transaction ();
 
@@ -262,7 +341,23 @@ phase3:
   /*
    * Cleanup
    */
-  locator_free_list_mops (class_table);
+clean:
+  if (class_table)
+    {
+      locator_free_list_mops (class_table);
+    }
+  else
+    {
+      if (class_mops)
+        {
+          for (i = 0; i < num_class_mops; i++)
+            {
+              class_mops[i] = NULL;
+            }
+
+          free_and_init (class_mops);
+        }
+    }
 
   return status;
 }

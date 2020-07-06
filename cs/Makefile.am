@@ -81,6 +81,7 @@ EXECUTABLE_SOURCES = \
 	$(EXECUTABLE_DIR)/util_cs.c \
 	$(EXECUTABLE_DIR)/util_common.c \
 	$(EXECUTABLE_DIR)/compactdb_cl.c \
+	$(EXECUTABLE_DIR)/compactdb_common.c \
 	$(EXECUTABLE_DIR)/loaddb.c \
 	$(EXECUTABLE_DIR)/unloaddb.c \
 	$(EXECUTABLE_DIR)/load_object.c \

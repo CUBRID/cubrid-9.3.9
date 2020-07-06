@@ -78,7 +78,8 @@ extern int db_Disable_modifications;
 #define DB_CLIENT_TYPE_ADMIN_CSQL_WOS   14	/* admin csql that can write on standby */
 #define DB_CLIENT_TYPE_LOG_PREFETCHER   15
 #define DB_CLIENT_TYPE_LOG_APPLIER_PLUGIN   16
-#define DB_CLIENT_TYPE_MAX              DB_CLIENT_TYPE_LOG_APPLIER_PLUGIN
+#define DB_CLIENT_TYPE_ADMIN_COMPACTDB_WOS  17
+#define DB_CLIENT_TYPE_MAX              DB_CLIENT_TYPE_ADMIN_COMPACTDB_WOS
 extern int db_Client_type;
 
 extern char db_Database_name[];
