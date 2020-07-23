@@ -1003,7 +1003,9 @@ public class CUBRIDConnection implements Connection {
 
 	/* JDK 1.6 */
 	public boolean isValid(int arg0) throws SQLException {
-		throw new java.lang.UnsupportedOperationException();
+		if (u_con == null || is_closed) return false;
+
+		return !u_con.isClosed();
 	}
 
 	/* JDK 1.6 */
