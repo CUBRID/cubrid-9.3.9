@@ -3867,6 +3867,7 @@ qfile_make_sort_key (THREAD_ENTRY * thread_p, SORTKEY_INFO * key_info_p,
 	  /* safe guard: access to a position exceeding length */
 	  if (length > tuple_length)
 	    {
+	      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0);
 	      return SORT_ERROR_OCCURRED;
 	    }
 
