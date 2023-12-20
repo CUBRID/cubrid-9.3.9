@@ -3810,7 +3810,7 @@ qfile_make_sort_key (THREAD_ENTRY * thread_p, SORTKEY_INFO * key_info_p,
 		     RECDES * key_record_p, QFILE_LIST_SCAN_ID * input_scan_p,
 		     QFILE_TUPLE_RECORD * tuple_record_p)
 {
-  int i, nkeys, length;
+  int i, nkeys, length, tuple_length;
   SORT_REC *sort_record_p;
   char *data;
   SCAN_CODE scan_status;
@@ -3848,6 +3848,9 @@ qfile_make_sort_key (THREAD_ENTRY * thread_p, SORTKEY_INFO * key_info_p,
 	  sort_record_p->s.original.offset = input_scan_p->curr_offset;
 	}
 
+      /* safe guard: access to a position exceeding length */
+      tuple_length = QFILE_GET_TUPLE_LENGTH (tuple_record_p->tpl);
+
       /* STEP 2: build body */
       for (i = 0; i < nkeys; i++)
 	{
@@ -3860,6 +3863,13 @@ qfile_make_sort_key (THREAD_ENTRY * thread_p, SORTKEY_INFO * key_info_p,
 	      V_BOUND) ? QFILE_GET_TUPLE_VALUE_LENGTH (field_data) : 0);
 
 	  length += QFILE_TUPLE_VALUE_HEADER_SIZE + field_length;
+
+	  /* safe guard: access to a position exceeding length */
+	  if (length > tuple_length)
+	    {
+	      er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0);
+	      return SORT_ERROR_OCCURRED;
+	    }
 
 	  if (length <= key_record_p->area_size)
 	    {
