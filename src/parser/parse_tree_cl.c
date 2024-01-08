@@ -15293,6 +15293,7 @@ pt_apply_sort_spec (PARSER_CONTEXT * parser, PT_NODE * p,
 		    PT_NODE_FUNCTION g, void *arg)
 {
   p->info.sort_spec.expr = g (parser, p->info.sort_spec.expr, arg);
+  p->info.sort_spec.prev_expr = g (parser, p->info.sort_spec.prev_expr, arg);
   return p;
 }
 
@@ -15305,6 +15306,7 @@ static PT_NODE *
 pt_init_sort_spec (PT_NODE * p)
 {
   p->info.sort_spec.expr = 0;
+  p->info.sort_spec.prev_expr = 0;
   p->info.sort_spec.pos_descr.pos_no = 0;
   p->info.sort_spec.pos_descr.dom = NULL;
   p->info.sort_spec.asc_or_desc = PT_ASC;

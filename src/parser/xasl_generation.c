@@ -16468,11 +16468,6 @@ pt_to_buildlist_proc (PARSER_CONTEXT * parser, PT_NODE * select_node,
 
 	  select_node->info.query.q.select.list = node;
 
-	  /* we can dispose of the sort columns now as they no longer serve a
-	     purpose */
-	  parser_free_tree (parser, select_list_ex);
-	  select_list_ex = NULL;
-
 	  /* register initial outlist */
 	  xasl->outptr_list = buildlist->a_outptr_list_ex;
 
@@ -23299,7 +23294,7 @@ pt_expand_analytic_node (PARSER_CONTEXT * parser, PT_NODE * node,
 
   while (spec)
     {
-      PT_NODE *val = NULL, *expr = NULL, *list = select_list, *last = NULL;
+      PT_NODE *val = NULL, *expr = NULL, *prev_expr = NULL, *list = select_list, *last = NULL;
       int pos = 1;		/* sort spec indexing starts from 1 */
 
       if (spec->node_type != PT_SORT_SPEC)
@@ -23310,10 +23305,31 @@ pt_expand_analytic_node (PARSER_CONTEXT * parser, PT_NODE * node,
 
       /* pull sort expression */
       expr = spec->info.sort_spec.expr;
+      prev_expr = spec->info.sort_spec.prev_expr;
       if (expr == NULL)
 	{
 	  PT_INTERNAL_ERROR (parser, "null sort expression");
 	  return NULL;
+	}
+
+      if (expr->node_type == PT_VALUE && prev_expr != NULL)
+	{
+	  /* already exchange expr to value */
+	  /* move it in the select list and put a expr here */
+	  while (list != NULL)
+	    {
+	      last = list;
+	      list = list->next;
+	      pos++;
+	    }
+
+	  if (spec->info.sort_spec.pos_descr.pos_no != pos)
+	    {
+	      PT_INTERNAL_ERROR (parser, "invalid sort spec");
+	      return NULL;
+	    }
+	  /* put a expr */
+	  last->next = prev_expr;
 	}
 
       if (expr->node_type != PT_VALUE)
@@ -23344,6 +23360,7 @@ pt_expand_analytic_node (PARSER_CONTEXT * parser, PT_NODE * node,
 	    {
 	      /* no match, add it in select list */
 	      last->next = expr;
+	      spec->info.sort_spec.prev_expr = expr;
 	    }
 
 	  /* unlink from sort spec */
