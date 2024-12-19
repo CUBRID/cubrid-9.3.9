@@ -496,6 +496,8 @@ gültige Optionen:\n\
   -d, --data-only             nur Objekte exportieren; Standard: Schema und die Objekte\n\
       --output-prefix=PRÄFIX PRÄFIX für die Ausgangdateien; Standard: Datenbanknamen\n\
       --hash-file=DATEI        Datei für Hash; Standard: erzeugt bei tmpnam()\n\
+  -t, --thread-count=COUNT    Number of threads; default: 1 maximum: 127\n\
+      --enhanced-estimates    Obtaining the exact number of records in the table to unload; default: disabled\n\  
   -v, --verbose               ausführliche Statusmeldungen aktivieren; Standard: inaktiv\n\
       --use-delimiter         '"' verwenden, wo ein Identifikator anfängt und endet; Standard: nicht verwenden\n\
   -S, --SA-mode               Stand-Alone-Ausführung\n\

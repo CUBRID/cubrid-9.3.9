@@ -28,8 +28,33 @@
 #include "memory_alloc.h"
 #include "quick_fit.h"
 #include "memory_alloc.h"
+#if defined(WINDOWS)
+#include "porting.h"
+#endif
 
-HL_HEAPID ws_heap_id = 0;
+static HL_HEAPID ws_heap_id = 0;
+
+static pthread_t ws_Heap_Owner_id = (pthread_t) (-1);
+static int use_utility_theads = 0;
+
+#define DB_IS_UTILITY_THREAD() ((ws_heap_id == 0 || use_utility_theads == 0) ? false : (pthread_self () != ws_Heap_Owner_id))
+
+bool
+db_is_utility_thread ()
+{
+#if defined(SERVER_MODE)
+  assert (false);
+  return false;
+#else
+  return DB_IS_UTILITY_THREAD ();
+#endif
+}
+
+void
+db_set_use_utility_thread (bool use)
+{
+  use_utility_theads = use ? 1 : 0;
+}
 
 /*
  * db_create_workspace_heap () - create a lea heap
@@ -40,7 +65,11 @@ HL_HEAPID ws_heap_id = 0;
 HL_HEAPID
 db_create_workspace_heap (void)
 {
-  ws_heap_id = hl_register_lea_heap ();
+  if (ws_heap_id == 0)
+    {
+      ws_heap_id = hl_register_lea_heap ();
+      ws_Heap_Owner_id = pthread_self ();
+    }
   return ws_heap_id;
 }
 
@@ -52,7 +81,12 @@ db_create_workspace_heap (void)
 void
 db_destroy_workspace_heap (void)
 {
-  hl_unregister_lea_heap (ws_heap_id);
+  if (ws_heap_id != 0)
+    {
+      hl_unregister_lea_heap (ws_heap_id);
+      ws_heap_id = 0;
+      ws_Heap_Owner_id = (pthread_t) (-1);
+    }
 }
 
 /*
@@ -63,8 +97,19 @@ db_destroy_workspace_heap (void)
 void *
 db_ws_alloc (size_t size)
 {
+  if (DB_IS_UTILITY_THREAD ())
+    {
+      return malloc (size);
+    }
+
 #if defined(SA_MODE)
   void *ptr = NULL;
+
+  if (ws_heap_id == 0)
+    {
+      /* not initialized yet */
+      db_create_workspace_heap ();
+    }
 
   if (ws_heap_id && size > 0)
     {
@@ -84,6 +129,12 @@ db_ws_alloc (size_t size)
   return ptr;
 #else
   void *ptr = NULL;
+  if (ws_heap_id == 0)
+    {
+      /* not initialized yet */
+      db_create_workspace_heap ();
+    }
+
   if (ws_heap_id && (size > 0))
     {
       ptr = hl_lea_alloc (ws_heap_id, size);
@@ -100,10 +151,21 @@ db_ws_alloc (size_t size)
 void *
 db_ws_realloc (void *ptr, size_t size)
 {
+  if (DB_IS_UTILITY_THREAD ())
+    {
+      return (ptr) ? realloc (ptr, size) : malloc (size);
+    }
+
 #if defined(SA_MODE)
   if (ptr == NULL)
     {
       return db_ws_alloc (size);
+    }
+
+  if (ws_heap_id == 0)
+    {
+      /* not initialized yet */
+      db_create_workspace_heap ();
     }
 
   if (ws_heap_id && size > 0)
@@ -143,6 +205,12 @@ db_ws_realloc (void *ptr, size_t size)
       return NULL;
     }
 #else
+  if (ws_heap_id == 0)
+    {
+      /* not initialized yet */
+      db_create_workspace_heap ();
+    }
+
   if (ws_heap_id && (size > 0))
     {
       ptr = hl_lea_realloc (ws_heap_id, ptr, size);
@@ -159,6 +227,16 @@ db_ws_realloc (void *ptr, size_t size)
 void
 db_ws_free (void *ptr)
 {
+  if (DB_IS_UTILITY_THREAD ())
+    {
+      if (ptr)
+	{
+	  free (ptr);
+	}
+
+      return;
+    }
+
 #if defined(SA_MODE)
   if (ws_heap_id && ptr)
     {

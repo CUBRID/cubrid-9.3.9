@@ -83,7 +83,8 @@ extern int locator_get_class (OID * class_oid, int class_chn, const OID * oid,
 			      LC_COPYAREA ** fetch_copyarea);
 extern int locator_fetch_all (const HFID * hfid, LOCK * lock,
 			      OID * class_oidp, int *nobjects, int *nfetched,
-			      OID * last_oidp, LC_COPYAREA ** fetch_copyarea);
+			      OID * last_oidp, LC_COPYAREA ** fetch_copyarea,
+                              int request_pages);
 extern int locator_does_exist (OID * oidp, int chn, LOCK lock,
 			       OID * class_oid, int class_chn,
 			       int need_fetching, int prefetch,

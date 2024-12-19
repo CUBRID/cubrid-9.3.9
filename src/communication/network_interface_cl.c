@@ -348,16 +348,19 @@ locator_get_class (OID * class_oid, int class_chn, const OID * oid, LOCK lock,
 int
 locator_fetch_all (const HFID * hfid, LOCK * lock, OID * class_oidp,
 		   int *nobjects, int *nfetched, OID * last_oidp,
-		   LC_COPYAREA ** fetch_copyarea)
+		   LC_COPYAREA ** fetch_copyarea, int request_pages)
 {
 #if defined(CS_MODE)
   int req_error;
   char *ptr;
   int return_value = ER_FAILED;
-  OR_ALIGNED_BUF (OR_HFID_SIZE + (OR_INT_SIZE * 3) +
+  int client_endian;
+  
+  GET_ENDIAN_TYPE(client_endian);
+  OR_ALIGNED_BUF (OR_HFID_SIZE + (OR_INT_SIZE * 5) +
 		  (OR_OID_SIZE * 2)) a_request;
   char *request;
-  OR_ALIGNED_BUF (NET_COPY_AREA_SENDRECV_SIZE + (OR_INT_SIZE * 4) +
+  OR_ALIGNED_BUF (NET_COPY_AREA_SENDRECV_SIZE + (OR_INT_SIZE * 5) +
 		  OR_OID_SIZE) a_reply;
   char *reply;
 
@@ -370,6 +373,8 @@ locator_fetch_all (const HFID * hfid, LOCK * lock, OID * class_oidp,
   ptr = or_pack_int (ptr, *nobjects);
   ptr = or_pack_int (ptr, *nfetched);
   ptr = or_pack_oid (ptr, last_oidp);
+  ptr = or_pack_int (ptr, request_pages);
+  ptr = or_pack_int (ptr, client_endian);
   *fetch_copyarea = NULL;
 
   req_error = net_client_request_recv_copyarea (NET_SERVER_LC_FETCHALL,
@@ -381,6 +386,7 @@ locator_fetch_all (const HFID * hfid, LOCK * lock, OID * class_oidp,
   if (req_error == NO_ERROR)
     {
       ptr = reply + NET_COPY_AREA_SENDRECV_SIZE;
+      ptr += OR_INT_SIZE;	//  or_unpack_int (ptr, &client_endian);
       ptr = or_unpack_lock (ptr, lock);
       ptr = or_unpack_int (ptr, nobjects);
       ptr = or_unpack_int (ptr, nfetched);
@@ -400,7 +406,7 @@ locator_fetch_all (const HFID * hfid, LOCK * lock, OID * class_oidp,
 
   success =
     xlocator_fetch_all (NULL, hfid, lock, class_oidp, nobjects, nfetched,
-			last_oidp, fetch_copyarea);
+			last_oidp, fetch_copyarea, request_pages);
 
   EXIT_SERVER ();
 
@@ -586,7 +592,7 @@ locator_force (LC_COPYAREA * copy_area, int num_ignore_error_list,
   reply = OR_ALIGNED_BUF_START (a_reply);
 
   num_objs = locator_send_copy_area (copy_area, &content_ptr, &content_size,
-				     &desc_ptr, &desc_size);
+				     &desc_ptr, &desc_size, true);
 
   request_ptr = or_pack_int (request, num_objs);
   request_ptr = or_pack_int (request_ptr, mobjs->start_multi_update);
@@ -613,7 +619,7 @@ locator_force (LC_COPYAREA * copy_area, int num_ignore_error_list,
       if (error_code == NO_ERROR
 	  || error_code == ER_LC_PARTIALLY_FAILED_TO_FLUSH)
 	{
-	  locator_unpack_copy_area_descriptor (num_objs, copy_area, desc_ptr);
+	  locator_unpack_copy_area_descriptor (num_objs, copy_area, desc_ptr, -1);
 	}
     }
   if (desc_ptr)

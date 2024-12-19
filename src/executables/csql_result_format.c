@@ -966,6 +966,7 @@ object_to_string (DB_OBJECT * object, int format)
 static char *
 numeric_to_string (DB_VALUE * value, bool commas)
 {
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
   char *return_string, *conv_str;
   int prec;
   int comma_length;
@@ -984,7 +985,7 @@ numeric_to_string (DB_VALUE * value, bool commas)
       return (NULL);
     }
 
-  conv_str = numeric_db_value_print (value);
+  conv_str = numeric_db_value_print (value, str_buf);
   if (strlen (conv_str) > max_length - 1)
     {
       free_and_init (return_string);

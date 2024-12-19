@@ -3648,6 +3648,7 @@ numeric_db_value_coerce_from_num (DB_VALUE * src,
 				  DB_DATA_STATUS * data_status)
 {
   int ret = NO_ERROR;
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
 
   *data_status = DATA_STATUS_OK;
   /* Check for a DB_TYPE_NUMERIC src and a non NULL numerical dest */
@@ -3742,11 +3743,11 @@ numeric_db_value_coerce_from_num (DB_VALUE * src,
 
     case DB_TYPE_CHAR:
       {
-	char *return_string = NULL;
+	char *return_string = NULL;        
 	char *temp_str;
 	int size = 0;
 
-	temp_str = numeric_db_value_print (src);
+	temp_str = numeric_db_value_print (src, str_buf);
 	size = strlen (temp_str);
 	return_string = (char *) db_private_alloc (NULL, size + 1);
 	if (return_string == NULL)
@@ -3767,7 +3768,7 @@ numeric_db_value_coerce_from_num (DB_VALUE * src,
 	char *temp_str;
 	int size = 0;
 
-	temp_str = numeric_db_value_print (src);
+	temp_str = numeric_db_value_print (src, str_buf);
 	size = strlen (temp_str);
 	return_string = (char *) db_private_alloc (NULL, size + 1);
 	if (return_string == NULL)
@@ -3788,7 +3789,7 @@ numeric_db_value_coerce_from_num (DB_VALUE * src,
 	char *temp_str;
 	int size = 0;
 
-	temp_str = numeric_db_value_print (src);
+	temp_str = numeric_db_value_print (src, str_buf);
 	size = strlen (temp_str);
 	return_string = (char *) db_private_alloc (NULL, size + 1);
 	if (return_string == NULL)
@@ -3809,7 +3810,7 @@ numeric_db_value_coerce_from_num (DB_VALUE * src,
 	char *temp_str;
 	int size = 0;
 
-	temp_str = numeric_db_value_print (src);
+	temp_str = numeric_db_value_print (src, str_buf);
 	size = strlen (temp_str);
 	return_string = (char *) db_private_alloc (NULL, size + 1);
 	if (return_string == NULL)
@@ -4032,7 +4033,7 @@ numeric_db_value_coerce_from_num_strict (DB_VALUE * src, DB_VALUE * dest)
  * Note: returns the null-terminated string form of val
  */
 char *
-numeric_db_value_print (DB_VALUE * val)
+numeric_db_value_print (DB_VALUE * val, char * buf)
 {
   char temp[80];
   int nbuf;
@@ -4040,24 +4041,6 @@ numeric_db_value_print (DB_VALUE * val)
   int i;
   bool found_first_non_zero = false;
   int scale = db_value_scale (val);
-
-#if defined(SERVER_MODE)
-  THREAD_ENTRY *th_entry;
-  char *buf;
-#else /* SERVER_MODE */
-  static char buf[sizeof (temp) + 2];
-#endif /* SERVER_MODE */
-
-
-#if defined(SERVER_MODE)
-  th_entry = thread_get_thread_entry_info ();
-  buf = th_entry->qp_num_buf;
-  if (buf == NULL)
-    {
-      return NULL;
-    }
-
-#endif /* SERVER_MODE */
 
   if (DB_IS_NULL (val))
     {

@@ -2316,7 +2316,11 @@ _op_get_value_string (DB_VALUE * value)
   int iv;
   DB_BIGINT bigint;
   short sv;
-  extern char *numeric_db_value_print (DB_VALUE *);
+#if !defined (NUMERIC_MAX_STRING_SIZE)
+#define NUMERIC_MAX_STRING_SIZE (80 + 1)
+#endif  
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
+  extern char *numeric_db_value_print (DB_VALUE *, char * );
 
   result = (char *) malloc (result_size + 1);
   if (result == NULL)
@@ -2368,7 +2372,7 @@ _op_get_value_string (DB_VALUE * value)
       break;
     case DB_TYPE_NUMERIC:
       snprintf (result, result_size, "%s",
-		numeric_db_value_print ((DB_VALUE *) value));
+		numeric_db_value_print ((DB_VALUE *) value, str_buf));
       break;
     case DB_TYPE_SET:
     case DB_TYPE_MULTISET:

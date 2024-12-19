@@ -681,9 +681,9 @@ obj_print_describe_attribute (MOP class_p, PARSER_CONTEXT * parser,
 		}
 
 	      offset = snprintf (buf, DB_MAX_NUMERIC_PRECISION + 3, "(%s, ",
-				 numeric_db_value_print (&min_val));
+				 numeric_db_value_print (&min_val, line));
 	      snprintf (buf + offset, DB_MAX_NUMERIC_PRECISION + 1, "%s)",
-			numeric_db_value_print (&inc_val));
+			numeric_db_value_print (&inc_val, line));
 	      buffer = pt_append_nulstring (parser, buffer, buf);
 
 	      pr_clear_value (&min_val);
@@ -3817,7 +3817,7 @@ describe_data (const PARSER_CONTEXT * parser, PARSER_VARCHAR * buffer,
 	case DB_TYPE_NUMERIC:
 	  buffer = pt_append_nulstring (parser, buffer,
 					numeric_db_value_print ((DB_VALUE *)
-								value));
+								value, line));
 	  break;
 
 	case DB_TYPE_BIT:

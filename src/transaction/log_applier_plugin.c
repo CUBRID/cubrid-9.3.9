@@ -1695,7 +1695,8 @@ la_db_value_to_jobject (DB_VALUE * value)
 
     case DB_TYPE_NUMERIC:
       {
-	const char *s = (const char *) numeric_db_value_print (value);
+        char tmp_buf[NUMERIC_MAX_STRING_SIZE]; 
+	const char *s = (const char *) numeric_db_value_print (value, tmp_buf);
 	jstring str = NULL;
 
 	if (s == NULL)

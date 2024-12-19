@@ -1359,6 +1359,7 @@ static int
 jsp_get_value_size (DB_VALUE * value)
 {
   int type, size = 0;
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
 
   type = DB_VALUE_TYPE (value);
   switch (type)
@@ -1382,7 +1383,7 @@ jsp_get_value_size (DB_VALUE * value)
       break;
 
     case DB_TYPE_NUMERIC:
-      size = or_packed_string_length (numeric_db_value_print (value), NULL);
+      size = or_packed_string_length (numeric_db_value_print (value, str_buf), NULL);
       break;
 
     case DB_TYPE_CHAR:
@@ -1593,9 +1594,10 @@ jsp_pack_numeric_argument (char *buffer, DB_VALUE * value)
 {
   char *v;
   char *ptr;
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
 
   ptr = buffer;
-  v = numeric_db_value_print (value);
+  v = numeric_db_value_print (value, str_buf);
   ptr = or_pack_string (ptr, v);
 
   return ptr;

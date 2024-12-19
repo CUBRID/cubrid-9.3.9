@@ -221,7 +221,7 @@ cubrid 관리자 유틸리티, 버전 %1$s\n\
     stop          [-h <호스트 이름>] [-i] [데이터베이스 이름]\n\
     copylogdb     <start|stop> <데이터베이스 이름> <노드 이름>\n\
     applylogdb    <start|stop> <데이터베이스 이름> <노드 이름>\n\
-    prfetchlogdb  <start|stop> <데이터베이스 이름> <노드 이름>\n\
+    prefetchlogdb <start|stop> <데이터베이스 이름> <노드 이름>\n\
     plugin        <start|stop> <데이터베이스 이름> <노드 이름> local-database-name\n\
     replication   <start|stop> <노드 이름>\n\
     status         [-v]\n\
@@ -496,6 +496,8 @@ unloaddb: 데이터베이스에서 스키마와 객체를 언로드\n\
   -d, --data-only             오브젝트만 처리; 기본값: 스키마와 오브젝트 처리\n\
       --output-prefix=PREFIEX 출력 파일의 prefix; 기본값: 데이터베이스 이름 사용\n\
       --hash-file=FILE        해쉬 파일이름; 기본값: 파일을 생성하기 위해 tmpnam()을 사용함\n\
+  -t, --thread-count=COUNT    사용할 스레드 개수를 지정; 기본값: 1 최대값: 127\n\
+      --enhanced-estimates    언로드할 테이블의 정확한 레코드 건수 수집; 기본값 : 미적용\n\
   -v, --verbose               많은 상태 메시지를 출력; 기본값: 출력 안 함\n\
       --use-delimiter         식별자 처음과 끝에 '"' 사용; 기본값: 사용 안 함\n\
   -S, --SA-mode               독립 모드 실행\n\

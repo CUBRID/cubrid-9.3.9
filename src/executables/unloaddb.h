@@ -39,7 +39,7 @@ extern char *database_name;
 extern const char *output_dirname;
 extern char *input_filename;
 extern FILE *output_file;
-extern struct text_output *obj_out;
+extern int g_request_pages;
 extern int page_size;
 extern int cached_pages;
 extern int est_size;
@@ -48,8 +48,6 @@ extern int debug_flag;
 extern bool verbose_flag;
 extern bool include_references;
 extern char *output_prefix;
-extern bool do_schema;
-extern bool do_objects;
 extern bool ignore_err_flag;
 extern bool required_class_only;
 extern bool datafile_per_class;
@@ -66,6 +64,7 @@ extern int lo_count;
 
 extern int extractschema (const char *exec_name, int do_auth,
 			  EMIT_STORAGE_ORDER emit_storage_order);
-extern int extractobjects (const char *exec_name);
+extern int extractobjects (const char *exec_name, int nthreads,
+			   int sampling_records, bool enhanced_estimates);
 
 #endif /* _UNLOADDB_H_ */

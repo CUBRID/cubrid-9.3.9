@@ -24,6 +24,11 @@
 
 #ident "$Id$"
 
+#if !defined(WINDOWS)
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
+#endif
+
 #include "config.h"
 
 #include <stdio.h>
@@ -34,14 +39,18 @@
 
 #include <sys/stat.h>
 #if defined(WINDOWS)
+#include <io.h>
 #include <sys/timeb.h>
 #include <time.h>
 #include <direct.h>
 #define	SIGALRM	14
 #endif /* WINDOWS */
+#include <thread.h>
+#include <fcntl.h>
 
 #include "utility.h"
 #include "load_object.h"
+#include "unload_object_file.h"
 #include "file_hash.h"
 #include "db.h"
 #include "memory_hash.h"
@@ -69,6 +78,8 @@
 /* this must be the last header file included!!! */
 #include "dbval.h"
 
+#define CREAT_OBJECT_FILE_PERM   0644
+
 #define MARK_CLASS_REQUESTED(cl_no) \
   (class_requested[cl_no / 8] |= 1 << cl_no % 8)
 #define MARK_CLASS_REFERENCED(cl_no) \
@@ -83,8 +94,6 @@
   (class_processed[cl_no / 8] & 1 << cl_no % 8)
 
 #define GAUGE_INTERVAL	1
-
-static char *output_filename = NULL;
 
 static int output_number = 0;
 
@@ -145,23 +154,127 @@ static const char *prohibited_classes[] = {
   NULL
 };
 
-static int class_objects = 0;
-static int total_objects = 0;
-static int failed_objects = 0;
 
-static int approximate_class_objects = 0;
+// To enable HAVE_ATOMIC_BUILTINS, include "porting.h"
+#if !defined(HAVE_ATOMIC_BUILTINS)
+static pthread_mutex_t atomic_cs_lock = PTHREAD_MUTEX_INITIALIZER;
+#endif
+
+static inline INT64
+get_atomic_value (INT64 * atom_val)
+{  
+#if defined(HAVE_ATOMIC_BUILTINS)
+  return ATOMIC_INC_64 (atom_val, 0);  
+#else
+  INT64 tval;       
+  (void) pthread_mutex_lock (&atomic_cs_lock);
+  tval = *atom_val;
+  pthread_mutex_unlock (&atomic_cs_lock);
+  return tval;
+#endif /* HAVE_ATOMIC_BUILTINS */  
+}
+
+static inline void
+incr_atomic_value (INT64 * atom_val)
+{  
+#if defined(HAVE_ATOMIC_BUILTINS)
+  ATOMIC_INC_64 (atom_val, 1);  
+#else  
+  (void) pthread_mutex_lock (&atomic_cs_lock);
+  (*atom_val)++;
+  pthread_mutex_unlock (&atomic_cs_lock);
+  return tval;
+#endif /* HAVE_ATOMIC_BUILTINS */  
+}
+
+static inline void
+reset_atomic_value (INT64 * atom_val)
+{
+#if defined(HAVE_ATOMIC_BUILTINS)
+   ATOMIC_TAS_64 (atom_val, 0);
+#else
+  (void) pthread_mutex_lock (&atomic_cs_lock);
+  *atom_val = 0;
+  pthread_mutex_unlock (&atomic_cs_lock);
+#endif /* HAVE_ATOMIC_BUILTINS */
+}
+
+static INT64  class_objects_atomic = 0;
+static INT64  total_objects_atomic = 0;
+static INT64  failed_objects_atomic = 0;
+
+static INT64 approximate_class_objects = 0;
+static INT64 total_approximate_class_objects = 0;
 static char *gauge_class_name;
-static int total_approximate_class_objects = 0;
 
+static volatile bool writer_thread_proc_terminate = false;
+static volatile bool extractor_thread_proc_terminate = false;
+static int max_fetched_copyarea_list = 1;
+#if !defined(WINDOWS)
+static S_WAITING_INFO wi_unload_class;
+static S_WAITING_INFO wi_w_blk_getQ;
+S_WAITING_INFO wi_write_file;
+#endif
+#define INVALID_THREAD_ID  ((pthread_t) (-1))
 
 #define OBJECT_SUFFIX "_objects"
 
 #define HEADER_FORMAT 	"-------------------------------+--------------------------------\n""    %-25s  |  %23s \n""-------------------------------+--------------------------------\n"
-#define MSG_FORMAT 		"    %-25s  |  %10d (%3d%% / %3d%%)"
+#define MSG_FORMAT 		"    %-25s  |  %10d (%3d%% / %5d%%)"
+
+#define ALIGN_SPACE_FMT "    %-25s  | "
+
 static FILE *unloadlog_file = NULL;
 
 
-static int get_estimated_objs (HFID * hfid, int *est_objects);
+pthread_mutex_t g_update_hash_cs_lock = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct _lc_copyarea_node LC_COPYAREA_NODE;
+struct _lc_copyarea_node
+{
+  LC_COPYAREA *lc_copy_area;
+  LC_COPYAREA_NODE *next;
+};
+
+struct copyarea_list
+{
+  pthread_mutex_t m_cs_lock;
+  LC_COPYAREA_NODE *m_root;
+  LC_COPYAREA_NODE *m_tail;
+
+  LC_COPYAREA_NODE *m_free;
+
+  int m_max;
+  int m_used;
+ 
+#if !defined(WINDOWS)
+    S_WAITING_INFO m_wi_add_list;
+#endif
+};
+
+typedef struct _unloaddb_class_info UNLD_CLASS_PARAM;
+struct _unloaddb_class_info
+{
+  HFID *hfid;
+  DB_OBJECT *class_;
+  OID *class_oid;
+  SM_CLASS *class_ptr;
+  int referenced_class;
+  //extract_context *pctxt;
+
+#if !defined(WINDOWS)
+  S_WAITING_INFO wi_fetch;
+#endif
+
+  pthread_mutex_t mtx;
+  pthread_cond_t cond;
+
+  struct copyarea_list *cparea_lst_ref;
+};
+UNLD_CLASS_PARAM *g_uci = NULL;
+
+
+static int get_estimated_objs (HFID * hfid, INT64 *est_objects, bool enhanced);
 static int set_referenced_subclasses (DB_OBJECT * class_);
 static bool check_referenced_domain (DB_DOMAIN * dom_list, bool set_cls_ref,
 				     int *num_cls_refp);
@@ -169,14 +282,28 @@ static void extractobjects_cleanup (void);
 static void extractobjects_term_handler (int sig);
 static bool mark_referenced_domain (SM_CLASS * class_ptr, int *num_set);
 static void gauge_alarm_handler (int sig);
-static int process_class (int cl_no);
+static int process_class (int cl_no, int nthreads);
 static int process_object (DESC_OBJ * desc_obj, OID * obj_oid,
-			   int referenced_class);
-static int process_set (DB_SET * set);
-static int process_value (DB_VALUE * value);
+                           int referenced_class, TEXT_OUTPUT * obj_out);
+static int process_set (DB_SET * set, TEXT_OUTPUT * obj_out);
+static int process_value (DB_VALUE * value, TEXT_OUTPUT * obj_out);
 static void update_hash (OID * object_oid, OID * class_oid, int *data);
 static DB_OBJECT *is_class (OID * obj_oid, OID * class_oid);
 static int all_classes_processed (void);
+
+static void close_object_file ();
+static bool open_object_file (const char *exec_name, const char *output_dirname, const char *class_name);
+static bool init_thread_param (const char *output_dirname, int nthreads);
+static void quit_thread_param ();
+static void print_monitoring_info (const char *class_name, int nthreads);
+
+static void copyarea_list_clear_freelist (struct copyarea_list* calist);
+static void copyarea_list_constructor  (struct copyarea_list* calist, int max);
+static void copyarea_list_destrouctor  (struct copyarea_list* calist);
+static void copyarea_list_set_max_list (struct copyarea_list* calist, int n);
+static void copyarea_list_add_freelist (struct copyarea_list* calist, LC_COPYAREA_NODE * node);
+static void copyarea_list_add (struct copyarea_list* calist, LC_COPYAREA * fetch_area, bool try_clear);
+static LC_COPYAREA_NODE *copyarea_list_get (struct copyarea_list* calist);
 
 /*
  * get_estimated_objs - get the estimated number of object reside in file heap
@@ -185,19 +312,301 @@ static int all_classes_processed (void);
  *    est_objects(out): estimated number of object
  */
 static int
-get_estimated_objs (HFID * hfid, int *est_objects)
+get_estimated_objs (HFID * hfid, INT64 *est_objects, bool enhanced)
 {
   int ignore_npages;
   int nobjs = 0;
   int error = NO_ERROR;
 
-  error = heap_get_class_num_objects_pages (hfid, 1, &nobjs, &ignore_npages);
+#define USE_APPROXIMATION      (1)
+#define USE_ACTUAL             (0)
+
+  error = heap_get_class_num_objects_pages (hfid, (enhanced ? USE_ACTUAL : USE_APPROXIMATION), &nobjs, &ignore_npages);
   if (error < 0)
     return error;
 
   *est_objects += nobjs;
 
   return nobjs;
+}
+
+
+static int
+unload_printer (LC_COPYAREA * fetch_area, DESC_OBJ * desc_obj, TEXT_OUTPUT * obj_out)
+{
+  int i, error;
+  RECDES recdes;		/* Record descriptor */
+  LC_COPYAREA_MANYOBJS *mobjs;	/* Describe multiple objects in area */
+  LC_COPYAREA_ONEOBJ *obj;	/* Describe on object in area */
+#if defined(WINDOWS)
+  struct _timeb timebuffer;
+  time_t start = 0;
+#endif
+
+  error = NO_ERROR;
+  mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (fetch_area);
+  obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
+
+  for (i = 0; i < mobjs->num_objs; ++i)
+    {
+      /*
+       * Process all objects for a requested class, but
+       * only referenced objects for a referenced class.
+       */
+      incr_atomic_value(&class_objects_atomic);
+      incr_atomic_value(&total_objects_atomic);
+      LC_RECDES_TO_GET_ONEOBJ (fetch_area, obj, &recdes);
+      TIMER_BEGIN ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[0]));
+      error = desc_disk_to_obj (g_uci->class_, g_uci->class_ptr, &recdes, desc_obj, true);
+      TIMER_END ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[0]));
+      if (error == NO_ERROR)
+	{
+	  error = process_object (desc_obj, &obj->oid, g_uci->referenced_class, obj_out);
+	  if (error != NO_ERROR)
+	    {
+	      if (!ignore_err_flag)
+		{
+		  break;
+		}
+	      error = NO_ERROR;
+	    }
+	}
+      else
+	{
+	  if (error == ER_TF_BUFFER_UNDERFLOW)
+	    {
+	      break;
+	    }
+	  incr_atomic_value(&failed_objects_atomic);
+	}
+      obj = LC_NEXT_ONEOBJ_PTR_IN_COPYAREA (obj);
+#if defined(WINDOWS)
+      if (verbose_flag && (i % 10 == 0))
+	{
+	  _ftime (&timebuffer);
+	  if (start == 0)
+	    {
+	      start = timebuffer.time;
+	    }
+	  else
+	    {
+	      if ((timebuffer.time - start) > GAUGE_INTERVAL)
+		{
+		  gauge_alarm_handler (SIGALRM);
+		  start = timebuffer.time;
+		}
+	    }
+	}
+#endif
+    }
+
+  return error;
+}
+
+static THREAD_RET_T THREAD_CALLING_CONVENTION
+unload_extractor_thread (void *param)
+{
+  UNLD_THR_PARAM *parg = (UNLD_THR_PARAM *) param;
+  int thr_ret = NO_ERROR;
+  pthread_t tid = pthread_self ();
+  TEXT_OUTPUT *obj_out = &(parg->text_output);
+  DESC_OBJ *desc_obj = make_desc_obj (g_uci->class_ptr);
+  if (desc_obj == NULL)
+    {
+      thr_ret = ER_FAILED;
+    }
+  else
+    {        
+      LC_COPYAREA_NODE *node = NULL;      
+      //cuberr::context * er_context_p;
+
+      // we need to register a context
+      //er_context_p = new cuberr::context ();
+      //er_context_p->register_thread_local ();
+
+      while (extractor_thread_proc_terminate == false)
+	{
+	  node = copyarea_list_get (g_uci->cparea_lst_ref);
+	  if (node)
+	    {
+	      thr_ret = unload_printer (node->lc_copy_area, desc_obj, obj_out);
+              copyarea_list_add_freelist (g_uci->cparea_lst_ref, node);	      
+	      if (thr_ret != NO_ERROR)
+		{
+		  break;
+		}
+	    }
+	  else if (extractor_thread_proc_terminate == false)
+	    {
+	      TIMER_BEGIN ((g_sampling_records >= 0), &(parg->wi_get_list));
+
+	      pthread_mutex_lock (&g_uci->mtx);
+	      pthread_cond_wait (&g_uci->cond, &g_uci->mtx);
+	      pthread_mutex_unlock (&g_uci->mtx);
+
+	      TIMER_END ((g_sampling_records >= 0), &(parg->wi_get_list));
+	    }
+	}
+
+      node = copyarea_list_get (g_uci->cparea_lst_ref);
+      while (node)
+	{
+	  if (thr_ret == NO_ERROR)
+	    {
+	      thr_ret = unload_printer (node->lc_copy_area, desc_obj, obj_out);
+	    }
+	  copyarea_list_add_freelist (g_uci->cparea_lst_ref, node);
+	  node = copyarea_list_get (g_uci->cparea_lst_ref);
+	}
+
+      //er_context_p->deregister_thread_local ();
+      //delete er_context_p;
+      //er_context_p = NULL;
+
+      desc_free (desc_obj);
+    }
+
+  if (thr_ret != NO_ERROR)
+    {
+      error_occurred = true;
+    }
+
+  pthread_exit ((THREAD_RET_T) thr_ret);
+  return (THREAD_RET_T) thr_ret;
+}
+
+static THREAD_RET_T THREAD_CALLING_CONVENTION
+unload_writer_thread (void *param)
+{
+  pthread_t tid = pthread_self ();
+  int thr_ret = NO_ERROR;
+  int ret;
+
+  while (writer_thread_proc_terminate == false)
+    {
+      ret = flushing_write_blk_queue ();
+      if (ret < 0)
+	{
+	  thr_ret = ER_IO_WRITE;
+	  break;
+	}
+
+      TIMER_BEGIN ((g_sampling_records >= 0), &wi_w_blk_getQ);
+      usleep (100);
+#if !defined(WINDOWS)
+      if (ret == 0)
+	{
+	  wi_w_blk_getQ.cnt--;
+	}
+#endif
+      TIMER_END ((g_sampling_records >= 0), &wi_w_blk_getQ);
+    }
+
+  if (thr_ret == NO_ERROR)
+    {
+      ret = flushing_write_blk_queue ();
+      if (ret < 0)
+	{
+	  thr_ret = ER_IO_WRITE;
+	}
+    }
+
+  if (thr_ret != NO_ERROR)
+    {
+      error_occurred = true;
+    }
+
+  pthread_exit ((THREAD_RET_T) thr_ret);
+  return (THREAD_RET_T) thr_ret;
+}
+
+int
+unload_fetcher ()
+{
+  int i, error = NO_ERROR;
+  int nobjects = 0;
+  int nfetched = -1;
+  OID last_oid;
+  LC_COPYAREA *fetch_area;	/* Area where objects are received */
+  LOCK lock = IS_LOCK;		/* Lock to acquire for the above purpose */
+  TEXT_OUTPUT *obj_out = NULL;
+  DESC_OBJ *desc_obj = NULL;
+  OID *class_oid = g_uci->class_oid;
+  HFID *hfid = g_uci->hfid;
+
+  OID_SET_NULL (&last_oid);
+
+  if (!g_multi_thread_mode)
+    {
+      obj_out = &(g_thr_param[0].text_output);
+      desc_obj = make_desc_obj (g_uci->class_ptr);
+    }
+
+  while ((nobjects != nfetched) && (error_occurred == false))
+    {
+      TIMER_BEGIN ((g_sampling_records >= 0), &(g_uci->wi_fetch));
+      //error = locator_fetch_all (hfid, &lock, fetch_type, class_oid, &nobjects, &nfetched, &last_oid, &fetch_area,
+	//			 g_request_pages, g_parallel_process_cnt,
+	//			 (g_parallel_process_idx - 1) /* to zero base */ );
+      error = locator_fetch_all (hfid, &lock, class_oid, &nobjects, &nfetched, &last_oid, &fetch_area, g_request_pages);
+      TIMER_END ((g_sampling_records >= 0), &(g_uci->wi_fetch));
+      if (error == NO_ERROR)
+	{
+	  if (fetch_area != NULL)
+	    {
+	      if (!g_multi_thread_mode)
+		{
+		  error = unload_printer (fetch_area, desc_obj, obj_out);
+		  locator_free_copy_area (fetch_area);
+		  if (error != NO_ERROR)
+		    {
+		      break;
+		    }
+		}
+	      else
+		{
+		  copyarea_list_add (g_uci->cparea_lst_ref, fetch_area, true);
+		  fetch_area = NULL;
+		  pthread_mutex_lock (&g_uci->mtx);
+		  pthread_cond_signal (&g_uci->cond);
+		  pthread_mutex_unlock (&g_uci->mtx);
+		}
+
+	      if (g_sampling_records > 0)
+		{
+		  if (nfetched >= g_sampling_records)
+		    break;
+		}
+	    }
+	  else
+	    {
+	      /* No more objects */
+	      break;
+	    }
+	}
+      else
+	{
+	  /* some error was occurred */
+	  if (!ignore_err_flag)
+	    {
+	      break;
+	    }
+	  error = NO_ERROR;
+	  incr_atomic_value(&failed_objects_atomic);
+	}
+    }
+
+  if (desc_obj)
+    {
+      desc_free (desc_obj);
+    }
+
+  if (error != NO_ERROR)
+    {
+      error_occurred = true;
+    }
+
+  return error;
 }
 
 /*
@@ -335,6 +744,36 @@ check_referenced_domain (DB_DOMAIN * dom_list,
   return found_object_dom;
 }
 
+static bool
+check_include_object_domain (DB_DOMAIN * dom_list, DB_TYPE * db_type)
+{
+  DB_DOMAIN *dom;
+
+  for (dom = dom_list; dom; dom = db_domain_next (dom))
+    {
+      switch (TP_DOMAIN_TYPE (dom))
+	{
+	case DB_TYPE_OID:
+	case DB_TYPE_OBJECT:
+	  *db_type = TP_DOMAIN_TYPE (dom);
+	  return true;
+
+	case DB_TYPE_SET:
+	case DB_TYPE_MULTISET:
+	case DB_TYPE_SEQUENCE:
+	  if (check_include_object_domain (db_domain_set (dom), db_type))
+	    {
+	      return true;
+	    }
+	  break;
+
+	default:
+	  break;
+	}
+    }
+  return false;
+}
+
 
 /*
  * extractobjects_cleanup - do cleanup task
@@ -343,13 +782,7 @@ check_referenced_domain (DB_DOMAIN * dom_list,
 static void
 extractobjects_cleanup (void)
 {
-  if (obj_out)
-    {
-      if (obj_out->buffer != NULL)
-	free_and_init (obj_out->buffer);
-      if (obj_out->fp != NULL)
-	fclose (obj_out->fp);
-    }
+  close_object_file ();   
 
   if (obj_table != NULL)
     {
@@ -361,8 +794,7 @@ extractobjects_cleanup (void)
     }
   if (cl_table != NULL)
     fh_destroy (cl_table);
-
-  free_and_init (output_filename);
+  
   free_and_init (class_requested);
   free_and_init (class_referenced);
   free_and_init (class_processed);
@@ -377,6 +809,19 @@ extractobjects_cleanup (void)
 static void
 extractobjects_term_handler (int sig)
 {
+  static volatile int hit_signal = 0;
+  int hit = ++hit_signal;
+  if (hit != 1)
+    {
+      return;
+    }
+
+  error_occurred = true;
+  extractor_thread_proc_terminate = true;
+  usleep (1000);
+  writer_thread_proc_terminate = true;
+  usleep (100);
+
   extractobjects_cleanup ();
   /* terminate a program */
   _exit (1);
@@ -439,11 +884,11 @@ mark_referenced_domain (SM_CLASS * class_ptr, int *num_set)
  *    exec_name(in): utility name
  */
 int
-extractobjects (const char *exec_name)
+extractobjects (const char *exec_name, int nthreads, int sampling_records, bool enhanced_estimates)
 {
   int i, error;
   HFID *hfid;
-  int est_objects = 0;
+  INT64 est_objects = 0;
   int cache_size;
   SM_CLASS *class_ptr;
   const char **cptr;
@@ -458,8 +903,13 @@ extractobjects (const char *exec_name)
 #if !defined (WINDOWS)
   void (*prev_quit_handler) (int sig);
 #endif
+  INT64 total_objects, failed_objects; 
   LOG_LSA lsa;
   char unloadlog_filename[PATH_MAX];
+  TEXT_OUTPUT *obj_out = NULL;
+  
+  // set sampling mode
+  g_sampling_records = sampling_records;  
 
   /* register new signal handlers */
   prev_intr_handler =
@@ -499,57 +949,26 @@ extractobjects (const char *exec_name)
       return 1;
     }
 
-  if (!datafile_per_class)
+  reset_atomic_value(&class_objects_atomic);
+  reset_atomic_value(&total_objects_atomic);
+  reset_atomic_value(&failed_objects_atomic);
+
+  if (init_thread_param (output_dirname, nthreads) == false)
     {
-      output_filename = (char *) malloc (PATH_MAX);
-
-      if (output_filename == NULL)
-	{
-	  return 1;
-	}
-      snprintf (output_filename, PATH_MAX - 1, "%s/%s%s",
-		output_dirname, output_prefix, OBJECT_SUFFIX);
-
-      obj_out->fp = fopen_ex (output_filename, "wb");
-      if (obj_out->fp == NULL)
-	{
-	  fprintf (stderr, "%s: %s.\n\n", exec_name, strerror (errno));
-	  free_and_init (output_filename);
-	  return errno;
-	}
+      status = 1;
+      goto end;
     }
 
-  {
-    struct stat stbuf;
-    int blksize;
+  obj_out = &(g_thr_param[0].text_output);  
 
-    blksize = 4096;		/* init */
-    if (stat (output_dirname, &stbuf) == -1)
-      {
-	;			/* nop */
-      }
-    else
-      {
-#if defined (WINDOWS)
-	blksize = 4096;
-#else /* !WINDOWS */
-	blksize = stbuf.st_blksize;
-#endif /* WINDOWS */
-      }
-
-    /*
-     * Determine the IO buffer size by specifying a multiple of the
-     * natural block size for the device.
-     * NEED FUTURE OPTIMIZATION
-     */
-    obj_out->iosize = 1024 * 1024;	/* 1 Mbyte */
-    obj_out->iosize -= (obj_out->iosize % blksize);
-
-    obj_out->buffer = (char *) malloc (obj_out->iosize);
-
-    obj_out->ptr = obj_out->buffer;	/* init */
-    obj_out->count = 0;		/* init */
-  }
+  if (!datafile_per_class)
+    {
+      if (open_object_file (exec_name, output_dirname, NULL) == false)
+	{
+	  status = 1;
+	  goto end;
+	}
+    }
 
   /*
    * The user indicates which classes are to be processed by
@@ -740,8 +1159,8 @@ extractobjects (const char *exec_name)
 			    }
 			  has_obj_ref =
 			    check_referenced_domain (attribute->domain, false
-						     /* don't set */ ,
-						     &num_cls_ref);
+								 /* don't set */ ,
+								 &num_cls_ref);
 			  if (has_obj_ref == true)
 			    {
 #if defined(CUBRID_DEBUG)
@@ -760,15 +1179,18 @@ extractobjects (const char *exec_name)
 	      num_unload_classes++;
 	    }
 
-	  hfid = sm_heap ((MOBJ) class_ptr);
-	  if (!HFID_IS_NULL (hfid))
-	    {
-	      if (get_estimated_objs (hfid, &est_objects) < 0)
-		{
-		  status = 1;
-		  goto end;
-		}
-	    }
+ 	  if (IS_CLASS_REQUESTED (i))
+            {
+              hfid = sm_heap ((MOBJ) class_ptr);
+	      if (!HFID_IS_NULL (hfid))
+	        {
+	          if (get_estimated_objs (hfid, &est_objects, enhanced_estimates) < 0)
+		    {
+		      status = 1;
+		      goto end;
+		    }
+	        }
+            }
 	}
     }
 
@@ -936,8 +1358,7 @@ extractobjects (const char *exec_name)
 	      int ret_val;
 
 	      if (datafile_per_class && IS_CLASS_REQUESTED (i))
-		{
-		  char outfile[PATH_MAX];
+		{		  
 
 		  ws_find (class_table->mops[i], (MOBJ *) & class_ptr);
 		  if (class_ptr == NULL)
@@ -946,30 +1367,18 @@ extractobjects (const char *exec_name)
 		      goto end;
 		    }
 
-		  snprintf (outfile, PATH_MAX - 1, "%s/%s_%s%s",
-			    output_dirname, output_prefix,
-			    class_ptr->header.name, OBJECT_SUFFIX);
-
-		  obj_out->fp = fopen_ex (outfile, "wb");
-		  if (obj_out->fp == NULL)
+                 if (open_object_file (exec_name, output_dirname, class_ptr->header.name) == false)
 		    {
 		      status = 1;
 		      goto end;
 		    }
 		}
 
-	      ret_val = process_class (i);
+	      ret_val = process_class (i, nthreads);
 
 	      if (datafile_per_class && IS_CLASS_REQUESTED (i))
 		{
-		  if (text_print_flush (obj_out) != NO_ERROR)
-		    {
-		      status = 1;
-		      goto end;
-		    }
-
-		  fclose (obj_out->fp);
-		  obj_out->fp = NULL;
+		  close_object_file ();
 		}
 
 	      if (ret_val != NO_ERROR)
@@ -985,6 +1394,8 @@ extractobjects (const char *exec_name)
     }
   while (!all_classes_processed ());
 
+  total_objects = get_atomic_value(&total_objects_atomic);
+  failed_objects = get_atomic_value(&failed_objects_atomic);
   if (failed_objects != 0)
     {
       status = 1;
@@ -1023,9 +1434,10 @@ extractobjects (const char *exec_name)
 	       lsa.pageid, lsa.offset);
     }
 
-  /* flush remaining buffer */
-  if (!datafile_per_class && text_print_flush (obj_out) != NO_ERROR)
+  /* flush remaining buffer */  
+  if (!datafile_per_class)
     {
+      close_object_file ();  
       status = 1;
     }
 
@@ -1039,6 +1451,7 @@ end:
    * Cleanup
    */
   free_and_init (unload_class_table);
+  quit_thread_param ();
   extractobjects_cleanup ();
 
   /* restore previous signal handlers */
@@ -1062,17 +1475,19 @@ gauge_alarm_handler (int sig)
 {
   if (sig == SIGALRM)
     {
-      fprintf (stdout, MSG_FORMAT "\r",
-	       gauge_class_name, class_objects,
-	       (class_objects > 0
-		&& approximate_class_objects >=
-		class_objects) ? (int) (100 * ((float) class_objects /
-					       (float)
-					       approximate_class_objects)) :
-	       100,
-	       (int) (100 *
-		      ((float) total_objects /
-		       (float) total_approximate_class_objects)));
+      INT64 class_objects = get_atomic_value(&class_objects_atomic);
+      INT64 total_objects = get_atomic_value(&total_objects_atomic);
+      INT64 total_approximate_class_objects_tmp = total_approximate_class_objects;
+
+      if (class_objects > approximate_class_objects)
+	{
+	  total_approximate_class_objects_tmp += (class_objects - approximate_class_objects);
+	}
+
+      fprintf (stdout, MSG_FORMAT "\r", gauge_class_name, class_objects,
+	       (class_objects > 0 && approximate_class_objects >= class_objects)
+	       ? (int) (100 * ((float) class_objects / (float) approximate_class_objects)) : 100,
+	       (int) (100 * ((float) total_objects / (float) total_approximate_class_objects_tmp)));
       fflush (stdout);
     }
   else
@@ -1086,72 +1501,16 @@ gauge_alarm_handler (int sig)
 }
 
 
-/*
- * process_class - dump one class in loader format
- *    return: NO_ERROR, if successful, error number, if not successful.
- *    cl_no(in): class object index for class_table
- */
-static int
-process_class (int cl_no)
+int
+print_object_header_for_class (SM_CLASS * class_ptr, OID * class_oid, TEXT_OUTPUT * obj_out)
 {
-  int error = NO_ERROR;
-  DB_OBJECT *class_ = class_table->mops[cl_no];
-  int i = 0;
-  int v = 0;
-  SM_CLASS *class_ptr;
+  char owner_name[DB_MAX_IDENTIFIER_LENGTH] = { '\0' };
+  char *class_name = NULL;
+  char output_owner[DB_MAX_USER_LENGTH + 4] = { '\0' };
   SM_ATTRIBUTE *attribute;
-  LC_COPYAREA *fetch_area;	/* Area where objects are received */
-  HFID *hfid;
-  OID *class_oid;
-  OID last_oid;
-  LOCK lock = S_LOCK;		/* Lock to acquire for the above purpose */
-  int nobjects, nfetched;
-  LC_COPYAREA_MANYOBJS *mobjs;	/* Describe multiple objects in area */
-  LC_COPYAREA_ONEOBJ *obj;	/* Describe on object in area        */
-  RECDES recdes;		/* Record descriptor */
-  DESC_OBJ *desc_obj = NULL;	/* The object described by obj       */
-  int requested_class = 0;
-  int referenced_class = 0;
-  void (*prev_handler) (int sig) = NULL;
-  unsigned int prev_alarm = 0;
-#if defined(WINDOWS)
-  struct _timeb timebuffer;
-  time_t start = 0;
-#endif
-  int total;
+  int v, error = NO_ERROR;
 
-  /*
-   * Only process classes that were requested or classes that were
-   * referenced via requested classes.
-   */
-  if (IS_CLASS_PROCESSED (cl_no))
-    {
-      goto exit_on_end;		/* do nothing successfully */
-    }
-
-  if (IS_CLASS_REQUESTED (cl_no))
-    requested_class = 1;
-  if (IS_CLASS_REFERENCED (cl_no))
-    referenced_class = 1;
-
-  if (!requested_class && !referenced_class)
-    {
-      goto exit_on_end;		/* do nothing successfully */
-    }
-
-  class_objects = 0;
-  MARK_CLASS_PROCESSED (cl_no);
-
-  /* Get the class data */
-  ws_find (class_, (MOBJ *) & class_ptr);
-  if (class_ptr == NULL)
-    {
-      goto exit_on_error;
-    }
-
-  class_oid = ws_oid (class_);
-
-  v = 0;
+   v = 0;
   for (attribute = class_ptr->shared; attribute != NULL;
        attribute = (SM_ATTRIBUTE *) attribute->header.next)
     {
@@ -1197,7 +1556,7 @@ process_class (int cl_no)
 	{
 	  CHECK_PRINT_ERROR (text_print (obj_out, " ", 1, NULL));
 	}
-      error = process_value (&attribute->default_value.value);
+      error = process_value (&attribute->default_value.value, obj_out);
       if (error != NO_ERROR)
 	{
 	  if (!ignore_err_flag)
@@ -1257,7 +1616,7 @@ process_class (int cl_no)
 	  CHECK_PRINT_ERROR (text_print (obj_out, " ", 1, NULL));
 	}
       if ((error =
-	   process_value (&attribute->default_value.value)) != NO_ERROR)
+	   process_value (&attribute->default_value.value, obj_out)) != NO_ERROR)
 	{
 	  if (!ignore_err_flag)
 	    {
@@ -1289,65 +1648,150 @@ process_class (int cl_no)
     }
   CHECK_PRINT_ERROR (text_print (obj_out, ")\n", 2, NULL));
 
+exit_on_error:
+  return error;
+}
+
+/*
+ * process_class - dump one class in loader format
+ *    return: NO_ERROR, if successful, error number, if not successful.
+ *    cl_no(in): class object index for class_table
+ */
+static int
+process_class (int cl_no, int nthreads)
+{
+  int error = NO_ERROR;
+  DB_OBJECT *class_ = class_table->mops[cl_no];
+  int i = 0;
+  SM_CLASS *class_ptr;
+  HFID *hfid;
+  OID *class_oid;
+  int requested_class = 0;
+  int referenced_class = 0;
+  void (*prev_handler) (int sig) = NULL;
+  unsigned int prev_alarm = 0;
+  INT64 class_objects = 0;
+  INT64 total_objects = 0;
+#if defined(WINDOWS)
+  struct _timeb timebuffer;
+  time_t start = 0;
+#endif
+  int total;
+  bool enabled_alarm = false;
+  UNLD_CLASS_PARAM unld_cls_info;
+  pthread_t writer_tid;
+  int *retval = NULL;
+  struct copyarea_list c_cparea_lst_class;
+  
+  /*
+   * Only process classes that were requested or classes that were
+   * referenced via requested classes.
+   */
+  if (IS_CLASS_PROCESSED (cl_no))
+    {      
+      return NO_ERROR;		/* do nothing successfully */
+    }
+
+  if (IS_CLASS_REQUESTED (cl_no))
+    requested_class = 1;
+  if (IS_CLASS_REFERENCED (cl_no))
+    referenced_class = 1;
+
+  if (!requested_class && !referenced_class)
+    {      
+      return NO_ERROR;		/* do nothing successfully */
+    }
+
+  copyarea_list_constructor  (&c_cparea_lst_class, 64);  
+
+  reset_atomic_value(&class_objects_atomic);
+  MARK_CLASS_PROCESSED (cl_no);
+
+  /* Get the class data */
+  ws_find (class_, (MOBJ *) & class_ptr);
+  if (class_ptr == NULL)
+    {
+      goto exit_on_error;
+    }
+
+  TIMER_CLEAR (&wi_w_blk_getQ);
+  TIMER_CLEAR (&wi_write_file);
+  TIMER_CLEAR (&wi_unload_class);
+  TIMER_BEGIN ((g_sampling_records >= 0), &wi_unload_class);
+
+  if (nthreads > 0)
+    {
+      for (i = 0; i < class_ptr->att_count; i++)
+	{
+	  DB_TYPE db_type_in;
+	  DB_TYPE db_type = class_ptr->attributes[i].type->id;
+	  switch (db_type)
+	    {
+	    case DB_TYPE_OID:
+	    case DB_TYPE_OBJECT:
+	      fprintf (stderr, "warning: %s%s%s has %s type.\n", PRINT_IDENTIFIER (class_ptr->header.name),
+		       db_get_type_name (db_type));
+	      fprintf (stderr, "So for class %s%s%s, '--thread-count' option is ignored.\n",
+		       PRINT_IDENTIFIER (class_ptr->header.name));
+	      fflush (stderr);
+	      // Notice: In this case, Do NOT use multi-threading!
+	      nthreads = 0;
+	      break;
+
+	    case DB_TYPE_SET:
+	    case DB_TYPE_MULTISET:
+	    case DB_TYPE_SEQUENCE:
+	      if (check_include_object_domain (class_ptr->attributes[i].domain, &db_type_in))
+		{
+		  fprintf (stderr, "warning: %s%s%s has %s type with %s type.\n",
+			   PRINT_IDENTIFIER (class_ptr->header.name), db_get_type_name (db_type),
+			   db_get_type_name (db_type_in));
+		  fprintf (stderr, "So for class %s%s%s, '--thread-count' option is ignored.\n",
+			   PRINT_IDENTIFIER (class_ptr->header.name));
+		  fflush (stderr);
+		  // Notice: In this case, Do NOT use multi-threading!
+		  nthreads = 0;
+		}
+	      break;
+
+	    default:
+	      break;
+	    }
+	}
+    }
+
+  /* Before outputting individual records, common information needs to be output.
+   * Let's print this information to a file immediately.
+   */
+  g_multi_thread_mode = false;    
+
+  class_oid = ws_oid (class_);
+
+  error = print_object_header_for_class (class_ptr, class_oid, &(g_thr_param[0].text_output));
+  if (error != NO_ERROR)
+    {
+      goto exit_on_error;
+    }
+
   /* Find the heap where the instances are stored */
   hfid = sm_heap ((MOBJ) class_ptr);
   if (hfid->vfid.fileid == NULL_FILEID)
-    {
-      if (total_objects == total_approximate_class_objects)
-	{
-	  total = 100;
-	}
-      else
-	{
-	  total = 100 *
-	    ((float) total_objects / (float) total_approximate_class_objects);
-	}
-      fprintf (unloadlog_file, MSG_FORMAT "\n", class_ptr->header.name, 0,
-	       100, total);
-      fflush (unloadlog_file);
-      if (verbose_flag)
-	{
-	  fprintf (stdout, MSG_FORMAT "\n", class_ptr->header.name, 0,
-		   100, total);
-	  fflush (stdout);
-	}
+    {      
       goto exit_on_end;
     }
 
   /* Flush all the instances */
 
-  if (locator_flush_all_instances (class_, DONT_DECACHE, LC_STOP_ON_ERROR) !=
-      NO_ERROR)
-    {
-      if (total_objects == total_approximate_class_objects)
-	{
-	  total = 100;
-	}
-      else
-	{
-	  total = 100 *
-	    ((float) total_objects / (float) total_approximate_class_objects);
-	}
-      fprintf (unloadlog_file, MSG_FORMAT "\n", class_ptr->header.name, 0,
-	       100, total);
-      fflush (unloadlog_file);
-      if (verbose_flag)
-	{
-	  fprintf (stdout, MSG_FORMAT "\n", class_ptr->header.name, 0,
-		   100, total);
-	  fflush (stdout);
-	}
+  if (locator_flush_all_instances (class_, DONT_DECACHE, LC_STOP_ON_ERROR) != NO_ERROR)
+    {      
       goto exit_on_end;
     }
 
-  nobjects = 0;
-  nfetched = -1;
-  OID_SET_NULL (&last_oid);
 
   /* Now start fetching all the instances */
 
   approximate_class_objects = 0;
-  if (get_estimated_objs (hfid, &approximate_class_objects) < 0)
+  if (get_estimated_objs (hfid, &approximate_class_objects, false) < 0)
     {
       if (!ignore_err_flag)
 	goto exit_on_error;
@@ -1359,102 +1803,136 @@ process_class (int cl_no)
 #if !defined (WINDOWS)
       prev_handler = os_set_signal_handler (SIGALRM, gauge_alarm_handler);
       prev_alarm = alarm (GAUGE_INTERVAL);
+      enabled_alarm = true;
 #endif
     }
 
-  desc_obj = make_desc_obj (class_ptr);
-
-  while (nobjects != nfetched)
+  error_occurred = false;
+  error = text_print_request_flush (&(g_thr_param[0].text_output), true);
+  if (error != NO_ERROR)
     {
+      goto exit_on_end;
+    }
 
-      if (locator_fetch_all (hfid, &lock, class_oid, &nobjects, &nfetched,
-			     &last_oid, &fetch_area) == NO_ERROR)
-	{
-	  if (fetch_area != NULL)
-	    {
-	      mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (fetch_area);
-	      obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
+  extractor_thread_proc_terminate = false;
+  writer_thread_proc_terminate = false;
+  g_multi_thread_mode = (nthreads > 0) ? true : false;
+  TIMER_CLEAR (&(g_thr_param[0].wi_get_list));
+  TIMER_CLEAR (&(g_thr_param[0].wi_add_Q));
 
-	      for (i = 0; i < mobjs->num_objs; ++i)
-		{
-		  /*
-		   * Process all objects for a requested class, but
-		   * only referenced objects for a referenced class.
-		   */
-		  ++class_objects;
-		  ++total_objects;
-		  LC_RECDES_TO_GET_ONEOBJ (fetch_area, obj, &recdes);
-		  if ((error =
-		       desc_disk_to_obj (class_, class_ptr, &recdes,
-					 desc_obj)) == NO_ERROR)
-		    {
-		      if ((error = process_object (desc_obj, &obj->oid,
-						   referenced_class)) !=
-			  NO_ERROR)
-			{
-			  if (!ignore_err_flag)
-			    {
-			      desc_free (desc_obj);
-			      locator_free_copy_area (fetch_area);
-			      goto exit_on_error;
-			    }
-			}
-		    }
-		  else
-		    {
-		      if (error == ER_TF_BUFFER_UNDERFLOW)
-			{
-			  desc_free (desc_obj);
-			  goto exit_on_error;
-			}
-		      ++failed_objects;
-		    }
-		  obj = LC_NEXT_ONEOBJ_PTR_IN_COPYAREA (obj);
-#if defined(WINDOWS)
-		  if (verbose_flag && (i % 10 == 0))
-		    {
-		      _ftime (&timebuffer);
-		      if (start == 0)
-			{
-			  start = timebuffer.time;
-			}
-		      else
-			{
-			  if ((timebuffer.time - start) > GAUGE_INTERVAL)
-			    {
-			      gauge_alarm_handler (SIGALRM);
-			      start = timebuffer.time;
-			    }
-			}
-		    }
+  TIMER_CLEAR (&(g_thr_param[0].wi_to_obj_str[0]));
+  TIMER_CLEAR (&(g_thr_param[0].wi_to_obj_str[1]));
+
+  unld_cls_info.hfid = hfid;
+  unld_cls_info.class_oid = class_oid;
+  unld_cls_info.class_ptr = class_ptr;
+  unld_cls_info.class_ = class_;
+  //unld_cls_info.pctxt = &ctxt;
+  unld_cls_info.referenced_class = referenced_class;
+#if !defined(WINDOWS)
+  memset (&(unld_cls_info.wi_fetch), 0x00, sizeof (S_WAITING_INFO));
 #endif
-		}
-	      locator_free_copy_area (fetch_area);
-	    }
-	  else
+
+  copyarea_list_set_max_list (&c_cparea_lst_class, max_fetched_copyarea_list);
+  unld_cls_info.cparea_lst_ref = &c_cparea_lst_class;
+  g_uci = &unld_cls_info;
+
+
+  if (g_multi_thread_mode)
+    {
+      if (pthread_mutex_init (&unld_cls_info.mtx, NULL) != 0)
+	{
+	  error = ER_FAILED;
+	  goto exit_on_end;
+	}
+      else if (pthread_cond_init (&unld_cls_info.cond, NULL) != 0)
+	{
+	  pthread_mutex_destroy (&unld_cls_info.mtx);
+	  error = ER_FAILED;
+	  goto exit_on_end;
+	}
+
+      for (i = 0; i < nthreads; i++)
+	{
+	  g_thr_param[i].thread_idx = i;
+	  g_thr_param[i].tid = INVALID_THREAD_ID;
+	  assert (g_thr_param[i].text_output.ref_thread_param_idx == i);
+
+	  TIMER_CLEAR (&(g_thr_param[i].wi_get_list));
+	  TIMER_CLEAR (&(g_thr_param[i].wi_add_Q));
+
+	  TIMER_CLEAR (&(g_thr_param[i].wi_to_obj_str[0]));
+	  TIMER_CLEAR (&(g_thr_param[i].wi_to_obj_str[1]));
+
+	  if (pthread_create (&(g_thr_param[i].tid), NULL, unload_extractor_thread, (void *) (g_thr_param + i)) != 0)
 	    {
-	      /* No more objects */
-	      break;
+	      perror ("pthread_create()\n");
+	      _exit (1);
 	    }
 	}
-      else
+
+      if (pthread_create (&writer_tid, NULL, unload_writer_thread, NULL) != 0)
 	{
-	  /* some error was occurred */
-	  if (!ignore_err_flag)
-	    {
-	      desc_free (desc_obj);
-	      goto exit_on_error;
-	    }
-	  else
-	    ++failed_objects;
+	  perror ("pthread_create()\n");
+	  _exit (1);
 	}
     }
 
-  desc_free (desc_obj);
+  YIELD_THREAD ();
+  unload_fetcher ();
 
-  total_approximate_class_objects +=
-    (class_objects - approximate_class_objects);
-  if (total_objects == total_approximate_class_objects)
+  if (!g_multi_thread_mode)
+    {
+      assert (g_thr_param[0].text_output.ref_thread_param_idx == 0);
+      error = text_print_request_flush (&(g_thr_param[0].text_output), true);
+    }
+  else
+    {
+      extractor_thread_proc_terminate = true;
+
+      pthread_mutex_lock (&unld_cls_info.mtx);
+      pthread_cond_broadcast (&unld_cls_info.cond);
+      pthread_mutex_unlock (&unld_cls_info.mtx);
+
+      pthread_cond_broadcast (&unld_cls_info.cond);
+      YIELD_THREAD ();
+
+      for (i = 0; i < nthreads; i++)
+	{
+	  int _err;
+	  void *retval;
+
+	  pthread_join (g_thr_param[i].tid, &retval);
+	  if ((_err = text_print_request_flush (&(g_thr_param[i].text_output), true)) != NO_ERROR)
+	    {
+	      error = _err;
+	    }
+	}
+
+      void *retval;
+      writer_thread_proc_terminate = true;
+      pthread_join (writer_tid, &retval);
+
+      g_multi_thread_mode = false;
+
+      pthread_cond_destroy (&unld_cls_info.cond);
+      pthread_mutex_destroy (&unld_cls_info.mtx);
+    }
+
+  TIMER_END ((g_sampling_records >= 0), &wi_unload_class);
+
+  if (error_occurred && error == NO_ERROR)
+    {
+      error = ER_FAILED;
+    }
+
+  class_objects = get_atomic_value(&class_objects_atomic);
+  total_approximate_class_objects += (class_objects - approximate_class_objects);
+
+exit_on_end:
+  class_objects = get_atomic_value(&class_objects_atomic);
+  total_objects = get_atomic_value(&total_objects_atomic);
+  if (total_objects >= total_approximate_class_objects)
     {
       total = 100;
     }
@@ -1466,8 +1944,11 @@ process_class (int cl_no)
   if (verbose_flag)
     {
 #if !defined(WINDOWS)
-      alarm (prev_alarm);
-      (void) os_set_signal_handler (SIGALRM, prev_handler);
+      if(enabled_alarm)
+        {
+          alarm (prev_alarm);
+          (void) os_set_signal_handler (SIGALRM, prev_handler);
+        }
 #endif
 
       fprintf (stdout, MSG_FORMAT "\n", class_ptr->header.name,
@@ -1477,13 +1958,18 @@ process_class (int cl_no)
   fprintf (unloadlog_file, MSG_FORMAT "\n", class_ptr->header.name,
 	   class_objects, 100, total);
 
-exit_on_end:
+  if (g_sampling_records >= 0)
+    {
+      print_monitoring_info (class_ptr->header.name, nthreads);
+    }
 
+  copyarea_list_destrouctor (&c_cparea_lst_class);    
   return error;
 
 exit_on_error:
 
-  CHECK_EXIT_ERROR (error);
+  copyarea_list_destrouctor (&c_cparea_lst_class);    
+  CHECK_EXIT_ERROR (error); 
   goto exit_on_end;
 
 }
@@ -1496,7 +1982,7 @@ exit_on_error:
  *    referenced_class(in): is referenced ?
  */
 static int
-process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class)
+process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class, TEXT_OUTPUT * obj_out)
 {
   int error = NO_ERROR;
   SM_CLASS *class_ptr;
@@ -1510,7 +1996,17 @@ process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class)
   class_oid = ws_oid (desc_obj->classop);
   if (!datafile_per_class && referenced_class)
     {				/* need to hash OID */
-      update_hash (obj_oid, class_oid, &data);
+      if (g_multi_thread_mode)
+	{
+	  pthread_mutex_lock (&g_update_hash_cs_lock);
+	  update_hash (obj_oid, class_oid, &data);
+	  pthread_mutex_unlock (&g_update_hash_cs_lock);
+	}
+      else
+	{
+           update_hash (obj_oid, class_oid, &data);
+        }
+        
       if (debug_flag)
 	{
 	  CHECK_PRINT_ERROR (text_print (obj_out,
@@ -1537,7 +2033,7 @@ process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class)
 
       value = &desc_obj->values[attribute->storage_order];
 
-      if ((error = process_value (value)) != NO_ERROR)
+      if ((error = process_value (value, obj_out)) != NO_ERROR)
 	{
 	  if (!ignore_err_flag)
 	    goto exit_on_error;
@@ -1547,14 +2043,12 @@ process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class)
     }
   CHECK_PRINT_ERROR (text_print (obj_out, "\n", 1, NULL));
 
-exit_on_end:
-
-  return error;
+  return text_print_request_flush (obj_out, false);
 
 exit_on_error:
 
   CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
+  return error;
 
 }
 
@@ -1567,7 +2061,7 @@ exit_on_error:
  *    default values.
  */
 static int
-process_set (DB_SET * set)
+process_set (DB_SET * set, TEXT_OUTPUT * obj_out)
 {
   int error = NO_ERROR;
   SET_ITERATOR *it = NULL;
@@ -1580,7 +2074,7 @@ process_set (DB_SET * set)
   while ((element_value = set_iterator_value (it)) != NULL)
     {
 
-      if ((error = process_value (element_value)) != NO_ERROR)
+      if ((error = process_value (element_value, obj_out)) != NO_ERROR)
 	{
 	  if (!ignore_err_flag)
 	    goto exit_on_error;
@@ -1620,7 +2114,7 @@ exit_on_error:
  *    value(in): the value to process
  */
 static int
-process_value (DB_VALUE * value)
+process_value (DB_VALUE * value, TEXT_OUTPUT * obj_out)
 {
   int error = NO_ERROR;
 
@@ -1785,7 +2279,7 @@ process_value (DB_VALUE * value)
     case DB_TYPE_SET:
     case DB_TYPE_MULTISET:
     case DB_TYPE_SEQUENCE:
-      CHECK_PRINT_ERROR (process_set (DB_GET_SET (value)));
+      CHECK_PRINT_ERROR (process_set (DB_GET_SET (value), obj_out));
       break;
 
     case DB_TYPE_ELO:
@@ -2071,3 +2565,347 @@ get_requested_classes (const char *input_filename, DB_OBJECT * class_list[])
 
   return 0;
 }
+
+
+static void
+close_object_file ()
+{
+  if (g_fd_handle != INVALID_FILE_NO)
+    {
+      close (g_fd_handle);
+      g_fd_handle = INVALID_FILE_NO;
+    }
+}
+
+
+static bool
+open_object_file (const char *exec_name, const char *output_dirname, const char *class_name)
+{
+  char out_fname[PATH_MAX];
+  char tmp_name[DB_MAX_IDENTIFIER_LENGTH * 2];
+  char *name_ptr = (char *) class_name;
+
+  out_fname[0] = '\0';
+  if (class_name && *class_name)
+    {
+      snprintf (out_fname, PATH_MAX - 1, "%s/%s_%s%s", output_dirname, output_prefix, name_ptr, OBJECT_SUFFIX);
+    }
+  else
+    {
+      snprintf (out_fname, PATH_MAX - 1, "%s/%s%s", output_dirname, output_prefix, OBJECT_SUFFIX);
+    }
+
+  g_fd_handle = open (out_fname, O_WRONLY | O_CREAT | O_TRUNC, CREAT_OBJECT_FILE_PERM);
+  if (g_fd_handle == INVALID_FILE_NO)
+    {
+      fprintf (stderr, "%s: %s.\n\n", exec_name, strerror (errno));
+      return false;
+    }
+
+  return true;
+}
+
+
+static bool
+init_thread_param (const char *output_dirname, int nthreads)
+{
+  int i;
+  int thr_max = (nthreads > 0) ? nthreads : 1;
+
+  g_thr_param = (UNLD_THR_PARAM *) calloc (thr_max, sizeof (UNLD_THR_PARAM));
+  if (g_thr_param == NULL)
+    {
+      assert (false);
+      fprintf (stderr, "Failed to allocate memory. (%ld bytes)\n\n", ((size_t) thr_max * sizeof (UNLD_THR_PARAM)));
+      return false;
+    }
+
+  for (i = 0; i < thr_max; i++)
+    {
+      g_thr_param[i].text_output.ref_thread_param_idx = i;
+    }
+
+  /* There may be content that needs to be output even before calling process_class().
+   * Let's output this area to a file immediately.
+   */
+  g_multi_thread_mode = false;
+
+  int _blksize = 4096;
+  g_io_buffer_size = 1024 * 1024;	/* 1 Mbyte */
+#if !defined (WINDOWS)
+  struct stat stbuf;
+  if (stat (output_dirname, &stbuf) != -1)
+    {
+      _blksize = stbuf.st_blksize;
+    }
+#endif /* WINDOWS */
+
+  int writer_q_size = 0;
+
+  writer_q_size = (thr_max * 4) + 1;
+  max_fetched_copyarea_list = (thr_max * 2) + 1;
+
+#if defined(USE_CFG_FILE_TUNNING_TEST)
+  read_unload_cfg (thr_max, &g_io_buffer_size, &max_fetched_copyarea_list, &writer_q_size);
+#endif
+  /*
+   * Determine the IO buffer size by specifying a multiple of the
+   * natural block size for the device.
+   * NEED FUTURE OPTIMIZATION
+   */
+  g_io_buffer_size -= (g_io_buffer_size % _blksize);
+  if (writer_q_size < 17)
+    {
+      writer_q_size = 17;
+    }
+
+#if defined(USE_CFG_FILE_TUNNING_TEST)
+  fprintf (stderr, "Notice: read unloaddb.cfg, io_buffer_size=%d fetch list=%d wq_size=%d\n",
+	   g_io_buffer_size, max_fetched_copyarea_list, writer_q_size);
+#endif
+
+  return init_queue_n_list_for_object_file (writer_q_size, (writer_q_size * 2));
+}
+
+static void
+quit_thread_param ()
+{
+  if (g_thr_param)
+    {
+      quit_queue_n_list_for_object_file();  
+      free_and_init (g_thr_param);
+    }
+}
+
+static void
+print_monitoring_info (const char *class_name, int nthreads)
+{
+#if !defined(WINDOWS)
+  int i;
+  FILE *fp = stdout;
+
+  assert (g_sampling_records >= 0);
+
+  if (verbose_flag == false)
+    {
+      int64_t class_objects = get_atomic_value(&class_objects_atomic);
+      fprintf (fp, ALIGN_SPACE_FMT "Records: %ld\n", class_name, class_objects);
+    }
+
+  fprintf (fp, ALIGN_SPACE_FMT "Elapsed: %12.6f sec\n", "",
+	   wi_unload_class.ts_wait_sum.tv_sec + ((double) wi_unload_class.ts_wait_sum.tv_nsec / NANO_PREC_VAL));
+  fprintf (fp, ALIGN_SPACE_FMT "Fetch  : %12.6f sec, count= %" PRId64 "\n", "",
+	   g_uci->wi_fetch.ts_wait_sum.tv_sec + ((double) g_uci->wi_fetch.ts_wait_sum.tv_nsec / NANO_PREC_VAL),
+	   g_uci->wi_fetch.cnt);
+
+  fprintf (fp, ALIGN_SPACE_FMT "Write  : %12.6f sec\n", "",
+	   wi_write_file.ts_wait_sum.tv_sec + ((double) wi_write_file.ts_wait_sum.tv_nsec / NANO_PREC_VAL));
+
+  if (nthreads <= 0)
+    {
+      return;
+    }
+
+  fprintf (fp, ALIGN_SPACE_FMT "Add L  : %12.6f sec, count= %" PRId64 "\n", "",
+	   g_uci->cparea_lst_ref->m_wi_add_list.ts_wait_sum.tv_sec +
+	   ((double) g_uci->cparea_lst_ref->m_wi_add_list.ts_wait_sum.tv_nsec / NANO_PREC_VAL),
+	   g_uci->cparea_lst_ref->m_wi_add_list.cnt);
+
+
+  S_WAITING_INFO winfo;
+
+  memset (&winfo, 0x00, sizeof (S_WAITING_INFO));
+  for (i = 0; i < nthreads; i++)
+    {
+#if 0
+      fprintf (fp, ALIGN_SPACE_FMT "Get L  : %12.6f sec, count= %" PRId64 "\n", "",
+	       g_thr_param[i].wi_get_list.ts_wait_sum.tv_sec +
+	       ((double) g_thr_param[i].wi_get_list.ts_wait_sum.tv_nsec / NANO_PREC_VAL),
+	       g_thr_param[i].wi_get_list.cnt);
+#endif
+      timespec_addup (&(winfo.ts_wait_sum), &(g_thr_param[i].wi_get_list.ts_wait_sum));
+      winfo.cnt += g_thr_param[i].wi_get_list.cnt;
+    }
+
+  fprintf (fp, ALIGN_SPACE_FMT "Get L  : %12.6f sec, count= %" PRId64 "\n", "",
+	   (winfo.ts_wait_sum.tv_sec + ((double) winfo.ts_wait_sum.tv_nsec / NANO_PREC_VAL)) / nthreads,
+	   (int64_t) (winfo.cnt / nthreads));
+
+
+  memset (&winfo, 0x00, sizeof (S_WAITING_INFO));
+  for (i = 0; i < nthreads; i++)
+    {
+      timespec_addup (&(winfo.ts_wait_sum), &(g_thr_param[i].wi_add_Q.ts_wait_sum));
+      winfo.cnt += g_thr_param[i].wi_add_Q.cnt;
+    }
+
+  fprintf (fp, ALIGN_SPACE_FMT "Add Q  : %12.6f sec, count= %" PRId64 "\n", "",
+	   (winfo.ts_wait_sum.tv_sec + ((double) winfo.ts_wait_sum.tv_nsec / NANO_PREC_VAL)) / nthreads,
+	   (int64_t) (winfo.cnt / nthreads));
+
+  fprintf (fp, ALIGN_SPACE_FMT "Get Q  : %12.6f sec, count= %" PRId64 "\n", "",
+	   (wi_w_blk_getQ.ts_wait_sum.tv_sec + ((double) wi_w_blk_getQ.ts_wait_sum.tv_nsec / NANO_PREC_VAL)),
+	   (int64_t) (wi_w_blk_getQ.cnt));
+
+  memset (&winfo, 0x00, sizeof (S_WAITING_INFO));
+  for (i = 0; i < nthreads; i++)
+    {
+      timespec_addup (&(winfo.ts_wait_sum), &(g_thr_param[i].wi_to_obj_str[0].ts_wait_sum));
+      winfo.cnt += g_thr_param[i].wi_to_obj_str[0].cnt;
+    }
+  fprintf (fp, ALIGN_SPACE_FMT "to obj : %12.6f sec\n", "",
+	   (winfo.ts_wait_sum.tv_sec + ((double) winfo.ts_wait_sum.tv_nsec / NANO_PREC_VAL)) / nthreads);
+
+  memset (&winfo, 0x00, sizeof (S_WAITING_INFO));
+  for (i = 0; i < nthreads; i++)
+    {
+      timespec_addup (&(winfo.ts_wait_sum), &(g_thr_param[i].wi_to_obj_str[1].ts_wait_sum));
+      winfo.cnt += g_thr_param[i].wi_to_obj_str[1].cnt;
+    }
+  fprintf (fp, ALIGN_SPACE_FMT "to str : %12.6f sec\n", "",
+	   (winfo.ts_wait_sum.tv_sec + ((double) winfo.ts_wait_sum.tv_nsec / NANO_PREC_VAL)) / nthreads);
+#endif
+}
+
+// 
+// support to struct copyarea_list
+static void
+copyarea_list_clear_freelist (struct copyarea_list* calist)
+  {
+    LC_COPYAREA_NODE *pt;
+    LC_COPYAREA_NODE *pt_free;
+
+      pthread_mutex_lock (&calist->m_cs_lock);
+      pt_free = calist->m_free;
+      calist->m_free = NULL;
+      pthread_mutex_unlock (&calist->m_cs_lock);
+
+    while (pt_free)
+      {
+	pt = pt_free;
+	pt_free = pt_free->next;
+
+	locator_free_copy_area (pt->lc_copy_area);
+	free (pt);
+      }
+      calist->m_free = NULL;
+  }
+
+static void
+copyarea_list_constructor  (struct copyarea_list* calist, int max)
+  {
+    pthread_mutex_init (&calist->m_cs_lock, NULL);
+    calist->m_root = calist->m_tail = NULL;
+    calist->m_free = NULL;
+    calist->m_max = max;
+    calist->m_used = 0;
+    TIMER_CLEAR (&calist->m_wi_add_list);
+  }
+static  void 
+copyarea_list_destrouctor  (struct copyarea_list* calist)
+  {
+    LC_COPYAREA_NODE *pt;
+    while (calist->m_root)
+      {
+	pt = calist->m_root;
+	calist->m_root = calist->m_root->next;
+	if (pt->lc_copy_area)
+	  {
+	    locator_free_copy_area (pt->lc_copy_area);
+	  }
+	free (pt);
+      }
+    calist->m_root = calist->m_tail = NULL;
+
+    copyarea_list_clear_freelist (calist);
+    (void) pthread_mutex_destroy (&calist->m_cs_lock);
+  }
+
+static void 
+copyarea_list_set_max_list (struct copyarea_list* calist, int n)
+  {
+    calist->m_max = n;
+  }
+
+static void 
+copyarea_list_add_freelist (struct copyarea_list* calist, LC_COPYAREA_NODE * node)
+  {
+    pthread_mutex_lock (&calist->m_cs_lock);
+    if (calist->m_free == NULL)
+      node->next = NULL;
+    else
+      node->next = calist->m_free;
+
+    calist->m_free = node;
+    pthread_mutex_unlock (&calist->m_cs_lock);
+  }
+
+static void 
+copyarea_list_add (struct copyarea_list* calist, LC_COPYAREA * fetch_area, bool try_clear)
+  {
+    LC_COPYAREA_NODE *pt;
+    bool tm_chk_flag = false;
+
+    if (try_clear)
+      {
+	copyarea_list_clear_freelist (calist);
+      }
+
+    pt = (LC_COPYAREA_NODE *) malloc (sizeof (LC_COPYAREA_NODE));
+    pt->next = NULL;
+    pt->lc_copy_area = fetch_area;
+
+    pthread_mutex_lock (&calist->m_cs_lock);
+    while (calist->m_max <= calist->m_used)
+      {
+	pthread_mutex_unlock (&calist->m_cs_lock);
+	if (!tm_chk_flag)
+	  {
+	    TIMER_BEGIN ((g_sampling_records >= 0), &calist->m_wi_add_list);
+	    tm_chk_flag = true;
+	  }
+	YIELD_THREAD ();
+	pthread_mutex_lock (&calist->m_cs_lock);
+      }
+
+    if (tm_chk_flag)
+      {
+	TIMER_END ((g_sampling_records >= 0), &calist->m_wi_add_list);
+      }
+
+    if (calist->m_root == NULL)
+      {
+	calist->m_root = pt;
+	calist->m_tail = calist->m_root;
+      }
+    else
+      {
+	assert (calist->m_tail);
+	calist->m_tail->next = pt;
+	calist->m_tail = pt;
+      }
+    calist->m_used++;
+    pthread_mutex_unlock (&calist->m_cs_lock);
+  }
+
+static LC_COPYAREA_NODE *
+copyarea_list_get (struct copyarea_list* calist)
+  {
+    LC_COPYAREA_NODE *pt = NULL;
+
+    pthread_mutex_lock (&calist->m_cs_lock);
+    if (calist->m_root != NULL)
+      {
+	pt = calist->m_root;
+	calist->m_root = calist->m_root->next;
+	if (calist->m_root == NULL)
+	  {
+	    calist->m_tail = NULL;
+	  }
+	calist->m_used--;
+      }
+    pthread_mutex_unlock (&calist->m_cs_lock);
+    return pt;
+  }
+
+

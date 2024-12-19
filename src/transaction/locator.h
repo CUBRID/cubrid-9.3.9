@@ -327,10 +327,10 @@ extern char *locator_pack_copy_area_descriptor (int num_objs,
 						char *desc);
 extern char *locator_unpack_copy_area_descriptor (int num_objs,
 						  LC_COPYAREA * copyarea,
-						  char *desc);
+						  char *desc, int packed_desc_size);
 extern int locator_send_copy_area (LC_COPYAREA * copyarea,
 				   char **contents_ptr, int *contents_length,
-				   char **desc_ptr, int *desc_length);
+				   char **desc_ptr, int *desc_length, bool encode_endian);
 #if defined(SERVER_MODE)
 extern LC_COPYAREA *locator_recv_allocate_copyarea (int num_objs,
 						    char **contents_ptr,

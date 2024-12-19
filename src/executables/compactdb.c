@@ -443,7 +443,7 @@ process_class (DB_OBJECT * class_, bool verbose_flag)
     {
 
       if (locator_fetch_all (hfid, &lock, class_oid, &nobjects, &nfetched,
-			     &last_oid, &fetch_area) == NO_ERROR)
+			     &last_oid, &fetch_area, 1) == NO_ERROR)
 	{
 	  if (fetch_area != NULL)
 	    {
@@ -456,7 +456,7 @@ process_class (DB_OBJECT * class_, bool verbose_flag)
 		  total_objects++;
 		  LC_RECDES_TO_GET_ONEOBJ (fetch_area, obj, &recdes);
 		  if (desc_disk_to_obj (class_, class_ptr, &recdes,
-					desc_obj) == NO_ERROR)
+					desc_obj, false) == NO_ERROR)
 		    {
 		      process_object (desc_obj, &obj->oid, verbose_flag);
 		    }

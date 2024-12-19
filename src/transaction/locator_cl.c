@@ -2806,7 +2806,7 @@ locator_fun_get_all_mops (MOP class_mop,
        * updated by the locator_fetch_all function on the server
        */
       error_code = locator_fetch_all (hfid, &lock, class_oid, &nobjects,
-				      &nfetched, &last_oid, &fetch_area);
+				      &nfetched, &last_oid, &fetch_area, 1);
       if (error_code != NO_ERROR)
 	{
 	  /* There was a failure. Was the transaction aborted ? */

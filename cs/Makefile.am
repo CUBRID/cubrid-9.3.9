@@ -86,6 +86,7 @@ EXECUTABLE_SOURCES = \
 	$(EXECUTABLE_DIR)/unloaddb.c \
 	$(EXECUTABLE_DIR)/load_object.c \
 	$(EXECUTABLE_DIR)/unload_object.c \
+        $(EXECUTABLE_DIR)/unload_object_file.c \
 	$(EXECUTABLE_DIR)/unload_schema.c \
 	$(EXECUTABLE_DIR)/file_hash.c \
 	$(EXECUTABLE_DIR)/loader.c \

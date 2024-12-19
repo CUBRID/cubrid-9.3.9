@@ -496,6 +496,8 @@ valid options:\n\
   -d, --data-only             dump objects only; default: schema and objects\n\
       --output-prefix=PREFIEX PREFIX for output files; default: the database name\n\
       --hash-file=FILE        FILE for hash; default: generate by tmpnam()\n\
+  -t, --thread-count=COUNT    Number of threads; default: 1 maximum: 127\n\
+      --enhanced-estimates    Obtaining the exact number of records in the table to unload; default: disabled\n\
   -v, --verbose               enable verbose status messages; default: disabled\n\
       --use-delimiter         use '"' where an identifier begins and ends; default: don't use\n\
   -S, --SA-mode               stand-alone mode execution\n\

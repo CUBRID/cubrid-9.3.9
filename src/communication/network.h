@@ -286,4 +286,19 @@ extern char *net_unpack_stats (char *buf, MNT_SERVER_EXEC_STATS * stats);
 /* Server startup */
 extern int net_server_start (const char *name);
 
+typedef enum
+{
+  NET_ENDIAN_UNKNOWN = 0,
+  NET_ENDIAN_LITTLE = 1,
+  NET_ENDIAN_BIG = 2
+} NET_ENDIAN;
+
+#define GET_ENDIAN_TYPE(endian) do {                    \
+  unsigned int e_v = 0x12345678;                        \
+  unsigned char *e_p = (unsigned char *) (&e_v);        \
+  endian = ((e_p[0] == 0x78) ? NET_ENDIAN_LITTLE        \
+                             : (e_p[0] == 0x12) ? NET_ENDIAN_BIG        \
+                                                : NET_ENDIAN_UNKNOWN);  \
+} while(0)
+
 #endif /* _NETWORK_H_ */

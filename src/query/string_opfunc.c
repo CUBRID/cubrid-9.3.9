@@ -16407,7 +16407,7 @@ number_to_char (const DB_VALUE * src_value,
 		const TP_DOMAIN * domain)
 {
   int error_status = NO_ERROR;
-  char tmp_str[64];
+  char tmp_str[NUMERIC_MAX_STRING_SIZE];  
   char *tmp_buf;
 
   char *cs;			/* current source string pointer     */
@@ -16455,7 +16455,7 @@ number_to_char (const DB_VALUE * src_value,
   switch (DB_VALUE_TYPE (src_value))
     {
     case DB_TYPE_NUMERIC:
-      tmp_buf = numeric_db_value_print ((DB_VALUE *) src_value);
+      tmp_buf = numeric_db_value_print ((DB_VALUE *) src_value, tmp_str);
       cs = (char *) db_private_alloc (NULL, strlen (tmp_buf) + 1);
       if (cs == NULL)
 	{
@@ -25172,6 +25172,7 @@ db_conv (const DB_VALUE * num, const DB_VALUE * from_base,
   char *num_p_str = (char *) num_str, *res_p_str = NULL;
   unsigned char swap = 0;
   int num_size = 0, res_size = 0;
+  char str_buf[NUMERIC_MAX_STRING_SIZE];
 
   /* auxiliary variables */
   UINT64 base10 = 0;
@@ -25239,7 +25240,7 @@ db_conv (const DB_VALUE * num, const DB_VALUE * from_base,
 	  break;
 
 	case DB_TYPE_NUMERIC:
-	  num_p_str = numeric_db_value_print ((DB_VALUE *) num);
+	  num_p_str = numeric_db_value_print ((DB_VALUE *) num, str_buf);
 	  break;
 
 	case DB_TYPE_FLOAT:

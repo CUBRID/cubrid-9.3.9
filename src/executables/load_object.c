@@ -68,21 +68,13 @@ static int object_disk_size (DESC_OBJ * obj, int *offset_size_ptr);
 static void put_varinfo (OR_BUF * buf, DESC_OBJ * obj, int offset_size);
 static void put_attributes (OR_BUF * buf, DESC_OBJ * obj);
 static void get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
-			      int bound_bit_flag, int offset_size);
+			      int bound_bit_flag, int offset_size,
+			      bool is_unloaddb);
 static SM_ATTRIBUTE *find_current_attribute (SM_CLASS * class_, int id);
 static void get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 			  DESC_OBJ * obj, int bound_bit_flag,
-			  int offset_size);
-static void fprint_set (FILE * fp, DB_SET * set);
-static int fprint_special_set (TEXT_OUTPUT * tout, DB_SET * set);
-static int bfmt_print (int bfmt, const DB_VALUE * the_db_bit, char *string,
-		       int max_size);
-static char *strnchr (char *str, char ch, int nbytes);
-static int print_quoted_str (TEXT_OUTPUT * tout, char *str, int len,
-			     int max_token_len);
-static void itoa_strreverse (char *begin, char *end);
-static int itoa_print (TEXT_OUTPUT * tout, DB_BIGINT value, int base);
-static int fprint_special_strings (TEXT_OUTPUT * tout, DB_VALUE * value);
+			  int offset_size, bool is_unloaddb);
+
 static void init_load_err_filter (void);
 static void default_clear_err_filter (void);
 
@@ -457,88 +449,6 @@ error:
 
 
 /*
- * text_print_flush - flush TEXT_OUTPUT contents to file
- *    return: NO_ERROR if successful, ER_IO_WRITE if file I/O error occurred
- *    tout(in/out): TEXT_OUTPUT structure
- */
-int
-text_print_flush (TEXT_OUTPUT * tout)
-{
-  /* flush to disk */
-  if (tout->count != (int) fwrite (tout->buffer, 1, tout->count, tout->fp))
-    {
-      return ER_IO_WRITE;
-    }
-
-  /* re-init */
-  tout->ptr = tout->buffer;
-  tout->count = 0;
-
-  return NO_ERROR;
-}
-
-/*
- * text_print - print formatted text to TEXT_OUTPUT
- *    return: NO_ERROR if successful, error code otherwise
- *    tout(out): TEXT_OUTPUT
- *    buf(in): source buffer
- *    buflen(in): length of buffer
- *    fmt(in): format string
- *    ...(in): arguments
- */
-int
-text_print (TEXT_OUTPUT * tout, const char *buf, int buflen, char const *fmt,
-	    ...)
-{
-  int error = NO_ERROR;
-  int nbytes, size;
-  va_list ap;
-
-  assert (buflen >= 0);
-
-start:
-  size = tout->iosize - tout->count;	/* free space size */
-
-  if (buflen)
-    {
-      nbytes = buflen;		/* unformatted print */
-    }
-  else
-    {
-      va_start (ap, fmt);
-      nbytes = vsnprintf (tout->ptr, size, fmt, ap);
-      va_end (ap);
-    }
-
-  if (nbytes > 0)
-    {
-      if (nbytes < size)
-	{			/* OK */
-	  if (buflen > 0)
-	    {			/* unformatted print */
-	      memcpy (tout->ptr, buf, buflen);
-	      *(tout->ptr + buflen) = '\0';	/* Null terminate */
-	    }
-	  tout->ptr += nbytes;
-	  tout->count += nbytes;
-	}
-      else
-	{			/* need more buffer */
-	  CHECK_PRINT_ERROR (text_print_flush (tout));
-	  goto start;		/* retry */
-	}
-    }
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-
-/*
  * desc_obj_to_disk - transforms the object into a disk record for eventual
  * storage.
  *    return: size in bytes (negative if buffer overflow)
@@ -650,21 +560,30 @@ desc_obj_to_disk (DESC_OBJ * obj, RECDES * record, bool * index_flag)
  */
 static void
 get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
-		  int bound_bit_flag, int offset_size)
+		  int bound_bit_flag, int offset_size, bool is_unloaddb)
 {
   SM_ATTRIBUTE *att;
   int *vars = NULL;
   int i, j, offset, offset2, pad;
   char *bits, *start;
   int rc = NO_ERROR;
+  bool do_copy = is_unloaddb ? false : true;
+  int zvar[32];
 
   /* need nicer way to store these */
   if (class_->variable_count)
     {
-      vars = (int *) malloc (sizeof (int) * class_->variable_count);
-      if (vars == NULL)
+      if (class_->variable_count <= (sizeof (zvar) / sizeof (zvar[0])))
 	{
-	  return;
+	  vars = zvar;
+	}
+      else
+	{
+	  vars = (int *) malloc (sizeof (int) * class_->variable_count);
+	  if (vars == NULL)
+	    {
+	      return;
+	    }
 	}
       offset = or_get_offset_internal (buf, &rc, offset_size);
       for (i = 0; i < class_->variable_count; i++)
@@ -700,7 +619,7 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 	{
 	  /* read the disk value into the db_value */
 	  (*(att->type->data_readval)) (buf, &obj->values[i], att->domain, -1,
-					true, NULL, 0);
+					do_copy, NULL, 0);
 	}
     }
 
@@ -725,10 +644,13 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 	   i++, j++, att = (SM_ATTRIBUTE *) att->header.next)
 	{
 	  (*(att->type->data_readval)) (buf, &obj->values[i], att->domain,
-					vars[j], true, NULL, 0);
+					vars[j], do_copy, NULL, 0);
 	}
 
-      free_and_init (vars);
+      if (vars != zvar)
+	{
+	  free (vars);
+	}
     }
 }
 
@@ -773,7 +695,8 @@ find_current_attribute (SM_CLASS * class_, int id)
  */
 static void
 get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
-	      DESC_OBJ * obj, int bound_bit_flag, int offset_size)
+	      DESC_OBJ * obj, int bound_bit_flag, int offset_size,
+	      bool is_unloaddb)
 {
   SM_REPRESENTATION *oldrep;
   SM_REPR_ATTRIBUTE *rat, *found;
@@ -784,6 +707,8 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
   SM_ATTRIBUTE **attmap = NULL;
   char *bits, *start;
   int rc = NO_ERROR;
+  bool do_copy = is_unloaddb ? false : true;
+  int zvar[32];
 
   oldrep = classobj_find_representation (class_, repid);
 
@@ -791,170 +716,175 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
     {
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_TF_INVALID_REPRESENTATION,
 	      1, class_->header.name);
+      return;
     }
-  else
+
+  if (oldrep->variable_count)
     {
-      if (oldrep->variable_count)
+      /* need nicer way to store these */
+      if (class_->variable_count <= (sizeof (zvar) / sizeof (zvar[0])))
 	{
-	  /* need nicer way to store these */
+	  vars = zvar;
+	}
+      else
+	{
 	  vars = (int *) malloc (sizeof (int) * oldrep->variable_count);
 	  if (vars == NULL)
 	    {
 	      goto abort_on_error;
 	    }
-	  offset = or_get_offset_internal (buf, &rc, offset_size);
-	  for (i = 0; i < oldrep->variable_count; i++)
-	    {
-	      offset2 = or_get_offset_internal (buf, &rc, offset_size);
-	      vars[i] = offset2 - offset;
-	      offset = offset2;
-	    }
-	  buf->ptr = PTR_ALIGN (buf->ptr, INT_ALIGNMENT);
 	}
+      offset = or_get_offset_internal (buf, &rc, offset_size);
+      for (i = 0; i < oldrep->variable_count; i++)
+	{
+	  offset2 = or_get_offset_internal (buf, &rc, offset_size);
+	  vars[i] = offset2 - offset;
+	  offset = offset2;
+	}
+      buf->ptr = PTR_ALIGN (buf->ptr, INT_ALIGNMENT);
+    }
 
-      /* calculate an attribute map */
-      total = oldrep->fixed_count + oldrep->variable_count;
-      attmap = (SM_ATTRIBUTE **) malloc (sizeof (SM_ATTRIBUTE *) * total);
-      if (attmap == NULL)
+  /* calculate an attribute map */
+  total = oldrep->fixed_count + oldrep->variable_count;
+  attmap = (SM_ATTRIBUTE **) malloc (sizeof (SM_ATTRIBUTE *) * total);
+  if (attmap == NULL)
+    {
+      goto abort_on_error;
+    }
+
+  memset (attmap, 0, sizeof (SM_ATTRIBUTE *) * total);
+
+  for (rat = oldrep->attributes, i = 0; rat != NULL; rat = rat->next, i++)
+    attmap[i] = find_current_attribute (class_, rat->attid);
+
+  rat = oldrep->attributes;
+
+  /* fixed */
+  start = buf->ptr;
+      for (i = 0; i < oldrep->fixed_count && rat != NULL;
+	   i++, rat = rat->next)
+    {
+      type = PR_TYPE_FROM_ID (rat->typeid_);
+      if (type == NULL)
 	{
 	  goto abort_on_error;
 	}
 
-      memset (attmap, 0, sizeof (SM_ATTRIBUTE *) * total);
+      if (attmap[i] == NULL)
+	{
+	  /* its gone, skip over it */
+	  (*(type->data_readval)) (buf, NULL, rat->domain, -1, do_copy, NULL,
+				   0);
+	}
+      else
+	{
+	  /* its real, get it into the proper value */
+	  (*(type->data_readval)) (buf,
+				   &obj->values[attmap[i]->storage_order],
+				   rat->domain, -1, do_copy, NULL, 0);
+	}
+    }
 
-      for (rat = oldrep->attributes, i = 0; rat != NULL; rat = rat->next, i++)
-	attmap[i] = find_current_attribute (class_, rat->attid);
+  fixed_size = (int) (buf->ptr - start);
+  padded_size = DB_ATT_ALIGN (fixed_size);
+  or_advance (buf, (padded_size - fixed_size));
+
+
+  /*
+   * sigh, we now have to process the bound bits in much the same way as the
+   * attributes above, it would be nice if these could be done in parallel
+   * but we don't have the fixed size of the old representation so we
+   * can't easily sneak the buffer pointer forward, work on this someday
+   */
+  if (bound_bit_flag && oldrep->fixed_count)
+    {
+      bits = buf->ptr;
+      bytes = OR_BOUND_BIT_BYTES (oldrep->fixed_count);
+      if ((buf->ptr + bytes) > buf->endptr)
+	{
+	  or_overflow (buf);
+	}
 
       rat = oldrep->attributes;
-
-      /* fixed */
-      start = buf->ptr;
-      for (i = 0; i < oldrep->fixed_count && rat != NULL;
-	   i++, rat = rat->next)
+      for (i = 0; i < oldrep->fixed_count && rat != NULL; i++, rat = rat->next)
 	{
-	  type = PR_TYPE_FROM_ID (rat->typeid_);
-	  if (type == NULL)
+	  if (attmap[i] != NULL)
 	    {
-	      goto abort_on_error;
-	    }
-
-	  if (attmap[i] == NULL)
-	    {
-	      /* its gone, skip over it */
-	      (*(type->data_readval)) (buf, NULL, rat->domain, -1, true, NULL,
-				       0);
-	    }
-	  else
-	    {
-	      /* its real, get it into the proper value */
-	      (*(type->data_readval)) (buf,
-				       &obj->values[attmap[i]->storage_order],
-				       rat->domain, -1, true, NULL, 0);
-	    }
-	}
-
-      fixed_size = (int) (buf->ptr - start);
-      padded_size = DB_ATT_ALIGN (fixed_size);
-      or_advance (buf, (padded_size - fixed_size));
-
-
-      /*
-       * sigh, we now have to process the bound bits in much the same way as the
-       * attributes above, it would be nice if these could be done in parallel
-       * but we don't have the fixed size of the old representation so we
-       * can't easily sneak the buffer pointer forward, work on this someday
-       */
-      if (bound_bit_flag && oldrep->fixed_count)
-	{
-	  bits = buf->ptr;
-	  bytes = OR_BOUND_BIT_BYTES (oldrep->fixed_count);
-	  if ((buf->ptr + bytes) > buf->endptr)
-	    {
-	      or_overflow (buf);
-	    }
-
-	  rat = oldrep->attributes;
-	  for (i = 0; i < oldrep->fixed_count && rat != NULL;
-	       i++, rat = rat->next)
-	    {
-	      if (attmap[i] != NULL)
+	      if (!OR_GET_BOUND_BIT (bits, i))
 		{
-		  if (!OR_GET_BOUND_BIT (bits, i))
-		    {
-		      DB_VALUE *v = &obj->values[attmap[i]->storage_order];
-		      db_value_clear (v);
-		      db_value_put_null (v);
-		    }
+		  DB_VALUE *v = &obj->values[attmap[i]->storage_order];
+		  db_value_clear (v);
+		  db_value_put_null (v);
 		}
 	    }
-	  or_advance (buf, bytes);
+	}
+      or_advance (buf, bytes);
+    }
+
+  /* variable */
+  for (i = 0; i < oldrep->variable_count && rat != NULL; i++, rat = rat->next)
+    {
+      type = PR_TYPE_FROM_ID (rat->typeid_);
+      if (type == NULL)
+	{
+	  goto abort_on_error;
 	}
 
-      /* variable */
-      for (i = 0; i < oldrep->variable_count && rat != NULL;
-	   i++, rat = rat->next)
+      att_index = i + oldrep->fixed_count;
+      if (attmap[att_index] == NULL)
 	{
-	  type = PR_TYPE_FROM_ID (rat->typeid_);
-	  if (type == NULL)
-	    {
-	      goto abort_on_error;
-	    }
+	  /* its null, skip over it */
+	  (*(type->data_readval)) (buf, NULL, rat->domain, vars[i], do_copy,
+				   NULL, 0);
+	}
+      else
+	{
+	  /* read it into the proper value */
+	  (*(type->data_readval)) (buf,
+				   &obj->values[attmap
+						[att_index]->storage_order],
+				   rat->domain, vars[i], do_copy, NULL, 0);
+	}
+    }
 
-	  att_index = i + oldrep->fixed_count;
-	  if (attmap[att_index] == NULL)
+  /*
+   * initialize new values
+   */
+  for (i = 0, att = class_->attributes; att != NULL;
+       i++, att = (SM_ATTRIBUTE *) att->header.next)
+    {
+      found = NULL;
+      for (rat = oldrep->attributes;
+	   rat != NULL && found == NULL; rat = rat->next)
+	{
+	  if (rat->attid == att->id)
 	    {
-	      /* its null, skip over it */
-	      (*(type->data_readval)) (buf, NULL, rat->domain, vars[i], true,
-				       NULL, 0);
-	    }
-	  else
-	    {
-	      /* read it into the proper value */
-	      (*(type->data_readval)) (buf,
-				       &obj->values[attmap
-						    [att_index]->
-						    storage_order],
-				       rat->domain, vars[i], true, NULL, 0);
+	      found = rat;
 	    }
 	}
-
-      /*
-       * initialize new values
-       */
-      for (i = 0, att = class_->attributes; att != NULL;
-	   i++, att = (SM_ATTRIBUTE *) att->header.next)
+      if (found == NULL)
 	{
-	  found = NULL;
-	  for (rat = oldrep->attributes;
-	       rat != NULL && found == NULL; rat = rat->next)
-	    {
-	      if (rat->attid == att->id)
-		{
-		  found = rat;
-		}
-	    }
-	  if (found == NULL)
-	    {
-	      /*
-	       * formerly used copy_value which converted MOP values to OID
-	       * values, is this really necessary ?
-	       */
+	  /*
+	   * formerly used copy_value which converted MOP values to OID
+	   * values, is this really necessary ?
+	   */
 	      pr_clone_value (&att->default_value.original_value,
 			      &obj->values[i]);
-	    }
 	}
-
-      if (attmap != NULL)
-	{
-	  free_and_init (attmap);
-	}
-      if (vars != NULL)
-	{
-	  free_and_init (vars);
-	}
-
-      obj->updated_flag = 1;
     }
+
+  if (attmap != NULL)
+    {
+      free_and_init (attmap);
+    }
+
+  if (vars && vars != zvar)
+    {
+      free (vars);
+    }
+
+  obj->updated_flag = 1;
+
   return;
 
 abort_on_error:
@@ -962,7 +892,7 @@ abort_on_error:
     {
       free (attmap);
     }
-  if (vars != NULL)
+  if (vars && vars != zvar)
     {
       free (vars);
     }
@@ -981,7 +911,7 @@ abort_on_error:
  */
 int
 desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
-		  DESC_OBJ * obj)
+		  DESC_OBJ * obj, bool is_unloaddb)
 {
   int error = NO_ERROR;
   OR_BUF orep, *buf;
@@ -1031,11 +961,13 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
 
       if (repid == class_->repid)
 	{
-	  get_desc_current (buf, class_, obj, bound_bit_flag, offset_size);
+	  get_desc_current (buf, class_, obj, bound_bit_flag, offset_size,
+			    is_unloaddb);
 	}
       else
 	{
-	  get_desc_old (buf, class_, repid, obj, bound_bit_flag, offset_size);
+	  get_desc_old (buf, class_, repid, obj, bound_bit_flag, offset_size,
+			is_unloaddb);
 	}
     }
   else
@@ -1048,667 +980,6 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
 
   return error;
 }
-
-
-/*
- * fprint_set - Print the contents of a real DB_SET (not a set descriptor).
- *    return: void
- *    fp(in): file pointer
- *    set(in): set reference
- */
-static void
-fprint_set (FILE * fp, DB_SET * set)
-{
-  DB_VALUE element_value;
-  int len, i;
-
-  len = set_size (set);
-  fprintf (fp, "{");
-  for (i = 0; i < len; i++)
-    {
-      if (set_get_element (set, i, &element_value) == NO_ERROR)
-	{
-	  desc_value_fprint (fp, &element_value);
-	  if (i < len - 1)
-	    {
-	      fprintf (fp, ", ");
-	    }
-	}
-    }
-  fprintf (fp, "}");
-}
-
-/*
- * fprint_special_set - Print the contents of a real DB_SET (not a set
- * descriptor).
- *    return: NO_ERROR, if successful, error code otherwise
- *    tout(in/out): TEXT_OUTPUT structure
- *    set(in): set reference
- */
-static int
-fprint_special_set (TEXT_OUTPUT * tout, DB_SET * set)
-{
-  int error = NO_ERROR;
-  DB_VALUE element_value;
-  int len, i;
-
-  len = set_size (set);
-  CHECK_PRINT_ERROR (text_print (tout, "{", 1, NULL));
-  for (i = 0; i < len; i++)
-    {
-      if (set_get_element (set, i, &element_value) == NO_ERROR)
-	{
-	  CHECK_PRINT_ERROR (desc_value_special_fprint
-			     (tout, &element_value));
-	  if (i < len - 1)
-	    {
-	      CHECK_PRINT_ERROR (text_print (tout, ",\n ", 2, NULL));
-	    }
-	}
-    }
-  CHECK_PRINT_ERROR (text_print (tout, "}", 1, NULL));
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-/*
- * bfmt_print - Change the given string to a representation of the given bit
- * string value in the given format.
- *    return: -1 if max_size too small, 0 if successful
- *    bfmt(in): format of bit string (binary or hex format)
- *    the_db_bit(in): input DB_VALUE
- *    string(out): output buffer
- *    max_size(in): size of string
- * Note:
- *   max_size specifies the maximum number of chars that can be stored in
- *   the string (including final '\0' char); if this is not long enough to
- *   contain the new string, then an error is returned.
- */
-#define  MAX_DISPLAY_COLUMN    70
-#define DBL_MAX_DIGITS    ((int)ceil(DBL_MAX_EXP * log10(FLT_RADIX)))
-
-#define BITS_IN_BYTE            8
-#define HEX_IN_BYTE             2
-#define BITS_IN_HEX             4
-#define BYTE_COUNT(bit_cnt)     (((bit_cnt)+BITS_IN_BYTE-1)/BITS_IN_BYTE)
-#define BYTE_COUNT_HEX(bit_cnt) (((bit_cnt)+BITS_IN_HEX-1)/BITS_IN_HEX)
-
-static int
-bfmt_print (int bfmt, const DB_VALUE * the_db_bit, char *string, int max_size)
-{
-  /*
-   * Description:
-   */
-  int length = 0;
-  int string_index = 0;
-  int byte_index;
-  int bit_index;
-  char *bstring;
-  int error = NO_ERROR;
-  static char digits[16] = { '0', '1', '2', '3', '4', '5', '6', '7',
-    '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
-  };
-
-  /* Get the buffer and the length from the_db_bit */
-  bstring = DB_GET_BIT (the_db_bit, &length);
-
-  switch (bfmt)
-    {
-    case 0:			/* BIT_STRING_BINARY */
-      if (length + 1 > max_size)
-	{
-	  error = -1;
-	}
-      else
-	{
-	  for (byte_index = 0; byte_index < BYTE_COUNT (length); byte_index++)
-	    {
-	      for (bit_index = 7;
-		   bit_index >= 0 && string_index < length; bit_index--)
-		{
-		  *string =
-		    digits[((bstring[byte_index] >> bit_index) & 0x1)];
-		  string++;
-		  string_index++;
-		}
-	    }
-	  *string = '\0';
-	}
-      break;
-
-    case 1:			/* BIT_STRING_HEX */
-      if (BYTE_COUNT_HEX (length) + 1 > max_size)
-	{
-	  error = -1;
-	}
-      else
-	{
-	  for (byte_index = 0; byte_index < BYTE_COUNT (length); byte_index++)
-	    {
-	      *string = digits[((bstring[byte_index] >> BITS_IN_HEX) & 0x0f)];
-	      string++;
-	      string_index++;
-	      if (string_index < BYTE_COUNT_HEX (length))
-		{
-		  *string = digits[((bstring[byte_index] & 0x0f))];
-		  string++;
-		  string_index++;
-		}
-	    }
-	  *string = '\0';
-	}
-      break;
-
-    default:
-      break;
-    }
-
-  return error;
-}
-
-/*
- * strnchr - strchr with string length constraints
- *    return: a pointer to the given 'ch', or a null pointer if not found
- *    str(in): string
- *    ch(in): character to find
- *    nbytes(in): length of string
- */
-static char *
-strnchr (char *str, char ch, int nbytes)
-{
-  for (; nbytes; str++, nbytes--)
-    {
-      if (*str == ch)
-	{
-	  return str;
-	}
-    }
-  return NULL;
-}
-
-/*
- * print_quoted_str - print quoted string sequences separated by new line to
- * TEXT_OUTPUT given
- *    return: NO_ERROR if successful, error code otherwise
- *    tout(out): destination buffer
- *    str(in) : string input
- *    len(in): length of string
- *    max_token_len(in): width of string to format
- * Note:
- *  FIXME :: return error in fwrite...
- */
-static int
-print_quoted_str (TEXT_OUTPUT * tout, char *str, int len, int max_token_len)
-{
-  int error = NO_ERROR;
-  char *p, *end;
-  int partial_len, write_len, left_nbytes;
-  char *internal_quote_p;
-
-  /* opening quote */
-  CHECK_PRINT_ERROR (text_print (tout, "'", 1, NULL));
-
-  left_nbytes = 0;
-  internal_quote_p = strnchr (str, '\'', len);	/* first found single-quote */
-  for (p = str, end = str + len, partial_len = len;
-       p < end; p += write_len, partial_len -= write_len)
-    {
-      write_len =
-	MIN (partial_len, left_nbytes > 0 ? left_nbytes : max_token_len);
-      if (internal_quote_p == NULL || (p + write_len <= internal_quote_p))
-	{
-	  /* not found single-quote in write_len */
-	  CHECK_PRINT_ERROR (text_print (tout, p, write_len, NULL));
-	  if (p + write_len < end)	/* still has something to work */
-	    {
-	      CHECK_PRINT_ERROR (text_print (tout, "\'+\n \'", 5, NULL));
-	    }
-	  left_nbytes = 0;
-	}
-      else
-	{
-	  left_nbytes = write_len;
-	  write_len = CAST_STRLEN (internal_quote_p - p + 1);
-	  CHECK_PRINT_ERROR (text_print (tout, p, write_len, NULL));
-	  left_nbytes -= (write_len + 1);
-	  /*
-	   * write internal "'" as "''", check for still has something to
-	   * work
-	   */
-	  CHECK_PRINT_ERROR (text_print
-			     (tout, (left_nbytes <= 0) ? "'\'+\n \'" : "'",
-			      (left_nbytes <= 0) ? 6 : 1, NULL));
-	  /* found the next single-quote */
-	  internal_quote_p =
-	    strnchr (p + write_len, '\'', partial_len - write_len);
-	}
-    }
-
-  /* closing quote */
-  CHECK_PRINT_ERROR (text_print (tout, "'", 1, NULL));
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-#define INTERNAL_BUFFER_SIZE (400)	/* bigger than DBL_MAX_DIGITS */
-
-/*
- * itoa_strreverse - reverse a string
- *    return: void
- *    begin(in/out): begin position of a string
- *    end(in/out): end position of a string
- */
-static void
-itoa_strreverse (char *begin, char *end)
-{
-  char aux;
-
-  while (end > begin)
-    {
-      aux = *end;
-      *end-- = *begin;
-      *begin++ = aux;
-    }
-}
-
-/*
- * itoa_print - 'itoa' print to TEXT_OUTPUT
- *    return: NO_ERROR, if successful, error number, if not successful.
- *    tout(out): output
- *    value(in): value container
- *    base(in): radix
- * Note:
- *     Ansi C "itoa" based on Kernighan & Ritchie's "Ansi C"
- *     with slight modification to optimize for specific architecture:
- */
-static int
-itoa_print (TEXT_OUTPUT * tout, DB_BIGINT value, int base)
-{
-  int error = NO_ERROR;
-  char *wstr;
-  bool is_negative;
-  DB_BIGINT quotient;
-  DB_BIGINT remainder;
-  int nbytes;
-  static const char itoa_digit[] = "0123456789abcdefghijklmnopqrstuvwxyz";
-
-  wstr = tout->ptr;
-
-  /* Validate base */
-  if (base < 2 || base > 35)
-    {
-      goto exit_on_error;	/* give up */
-    }
-
-  /* Take care of sign - in case of INT_MIN, it remains as it is */
-  is_negative = (value < 0) ? true : false;
-  if (is_negative)
-    {
-      value = -value;		/* change to the positive number */
-    }
-
-  /* Conversion. Number is reversed. */
-  do
-    {
-      quotient = value / base;
-      remainder = value % base;
-      *wstr++ = itoa_digit[(remainder >= 0) ? remainder : -remainder];
-    }
-  while ((value = quotient) != 0);
-
-  if (is_negative)
-    {
-      *wstr++ = '-';
-    }
-  *wstr = '\0';			/* Null terminate */
-
-  /* Reverse string */
-  itoa_strreverse (tout->ptr, wstr - 1);
-
-  nbytes = CAST_STRLEN (wstr - tout->ptr);
-
-  tout->ptr += nbytes;
-  tout->count += nbytes;
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-/*
- * fprint_special_strings - print special DB_VALUE to TEXT_OUTPUT
- *    return: NO_ERROR if successful, error code otherwise
- *    tout(out): output
- *    value(in): DB_VALUE
- */
-static int
-fprint_special_strings (TEXT_OUTPUT * tout, DB_VALUE * value)
-{
-  int error = NO_ERROR;
-  char buf[INTERNAL_BUFFER_SIZE];
-  char *ptr;
-  DB_TYPE type;
-  int len;
-
-  type = DB_VALUE_TYPE (value);
-  switch (type)
-    {
-    case DB_TYPE_NULL:
-      CHECK_PRINT_ERROR (text_print (tout, "NULL", 4, NULL));
-      break;
-
-    case DB_TYPE_BIGINT:
-      if (tout->iosize - tout->count < INTERNAL_BUFFER_SIZE)
-	{
-	  /* flush remaining buffer */
-	  CHECK_PRINT_ERROR (text_print_flush (tout));
-	}
-      CHECK_PRINT_ERROR (itoa_print (tout, DB_GET_BIGINT (value),
-				     10 /* base */ ));
-      break;
-    case DB_TYPE_INTEGER:
-      if (tout->iosize - tout->count < INTERNAL_BUFFER_SIZE)
-	{
-	  /* flush remaining buffer */
-	  CHECK_PRINT_ERROR (text_print_flush (tout));
-	}
-      CHECK_PRINT_ERROR (itoa_print (tout, DB_GET_INTEGER (value),
-				     10 /* base */ ));
-      break;
-    case DB_TYPE_SMALLINT:
-      if (tout->iosize - tout->count < INTERNAL_BUFFER_SIZE)
-	{
-	  /* flush remaining buffer */
-	  CHECK_PRINT_ERROR (text_print_flush (tout));
-	}
-      CHECK_PRINT_ERROR (itoa_print (tout, DB_GET_SMALLINT (value),
-				     10 /* base */ ));
-      break;
-
-    case DB_TYPE_FLOAT:
-    case DB_TYPE_DOUBLE:
-      {
-	char *pos;
-
-	pos = tout->ptr;
-	CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "%.*g",
-				       (type == DB_TYPE_FLOAT) ? 10 : 17,
-				       (type == DB_TYPE_FLOAT) ?
-				       DB_GET_FLOAT (value)
-				       : DB_GET_DOUBLE (value)));
-	if (!strchr (pos, '.'))
-	  {
-	    CHECK_PRINT_ERROR (text_print (tout, ".", 1, NULL));
-	  }
-      }
-      break;
-
-    case DB_TYPE_ENUMERATION:
-      if (tout->iosize - tout->count < INTERNAL_BUFFER_SIZE)
-	{
-	  /* flush remaining buffer */
-	  CHECK_PRINT_ERROR (text_print_flush (tout));
-	}
-      CHECK_PRINT_ERROR (itoa_print (tout, DB_GET_ENUM_SHORT (value),
-				     10 /* base */ ));
-      break;
-
-    case DB_TYPE_DATE:
-      db_date_to_string (buf, MAX_DISPLAY_COLUMN, DB_GET_DATE (value));
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "date '%s'", buf));
-      break;
-
-    case DB_TYPE_TIME:
-      db_time_to_string (buf, MAX_DISPLAY_COLUMN, DB_GET_TIME (value));
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "time '%s'", buf));
-      break;
-
-    case DB_TYPE_TIMESTAMP:
-      {
-	struct tm *temp, tm_val;
-	bool pm;
-	time_t tmp_time;
-
-	if (tout->iosize - tout->count < INTERNAL_BUFFER_SIZE)
-	  {
-	    /* flush remaining buffer */
-	    CHECK_PRINT_ERROR (text_print_flush (tout));
-	  }
-
-	tmp_time = *(DB_GET_TIMESTAMP (value));
-	temp = localtime_r (&tmp_time, &tm_val);
-	if (temp)
-	  {
-	    pm = (temp->tm_hour >= 12) ? true : false;
-	    if (temp->tm_hour == 0)
-	      {
-		temp->tm_hour = 12;
-	      }
-	    else if (temp->tm_hour > 12)
-	      {
-		temp->tm_hour -= 12;
-	      }
-
-	    CHECK_PRINT_ERROR (text_print (tout, NULL, 0,
-					   "timestamp '%02d:%02d:%02d %s %02d/%02d/%04d'",
-					   temp->tm_hour, temp->tm_min,
-					   temp->tm_sec, (pm) ? "PM" : "AM",
-					   temp->tm_mon + 1, temp->tm_mday,
-					   temp->tm_year + 1900));
-	  }
-	else
-	  {			/* error condition */
-	    CHECK_PRINT_ERROR (text_print (tout, NULL, 0,
-					   "timestamp '%02d:%02d:%02d %s %02d/%02d/%04d'",
-					   12, 0, 0, "AM", 1, 1, 1900));
-	  }
-      }
-      break;
-
-    case DB_TYPE_DATETIME:
-      db_datetime_to_string (buf, MAX_DISPLAY_COLUMN,
-			     DB_GET_DATETIME (value));
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "datetime '%s'", buf));
-      break;
-
-    case DB_TYPE_MONETARY:
-      /* Always print symbol before value, even if for turkish lira
-       * the user format is after value : intl_get_currency_symbol_position */
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "%s%.*f",
-				     intl_get_money_esc_ISO_symbol
-				     (DB_GET_MONETARY (value)->type), 2,
-				     DB_GET_MONETARY (value)->amount));
-      break;
-
-    case DB_TYPE_NCHAR:
-    case DB_TYPE_VARNCHAR:
-      CHECK_PRINT_ERROR (text_print (tout, "N", 1, NULL));
-      /* fall through */
-    case DB_TYPE_CHAR:
-    case DB_TYPE_VARCHAR:
-      ptr = DB_PULL_STRING (value);
-
-      len = db_get_string_size (value);
-      if (len < 0)
-	{
-	  len = strlen (ptr);
-	}
-
-      CHECK_PRINT_ERROR (print_quoted_str (tout,
-					   ptr, len, MAX_DISPLAY_COLUMN));
-      break;
-
-    case DB_TYPE_NUMERIC:
-      ptr = numeric_db_value_print (value);
-
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0,
-				     !strchr (ptr, '.') ? "%s." : "%s", ptr));
-      break;
-
-    case DB_TYPE_BIT:
-    case DB_TYPE_VARBIT:
-      {
-	int max_size = ((db_get_string_length (value) + 3) / 4) + 1;
-	if (max_size > INTERNAL_BUFFER_SIZE)
-	  {
-	    ptr = (char *) malloc (max_size);
-	    if (ptr == NULL)
-	      {
-		er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE,
-			ER_OUT_OF_VIRTUAL_MEMORY, 1, max_size);
-		break;		/* FIXME */
-	      }
-	  }
-	else
-	  {
-	    ptr = buf;
-	  }
-
-	if (bfmt_print (1 /* BIT_STRING_HEX */ , value, ptr, max_size) ==
-	    NO_ERROR)
-	  {
-	    CHECK_PRINT_ERROR (text_print (tout, "X", 1, NULL));
-	    CHECK_PRINT_ERROR (print_quoted_str (tout,
-						 ptr, max_size - 1,
-						 MAX_DISPLAY_COLUMN));
-	  }
-
-	if (ptr != buf)
-	  {
-	    free_and_init (ptr);
-	  }
-	break;
-      }
-
-      /* other stubs */
-    case DB_TYPE_ERROR:
-      CHECK_PRINT_ERROR (text_print
-			 (tout, NULL, 0, "%d", DB_GET_ERROR (value)));
-      break;
-
-    case DB_TYPE_POINTER:
-      CHECK_PRINT_ERROR (text_print (tout, NULL, 0, "%lx",
-				     (unsigned long) DB_GET_POINTER (value)));
-      break;
-
-    default:
-      /* the others are handled by callers or internal-use only types */
-      break;
-    }
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-/*
- * desc_value_special_fprint - Print a description of the given value.
- *    return: NO_ERROR, if successful, error number, if not successful.
- *    tout(out):  TEXT_OUTPUT
- *    value(in): value container
- * Note:
- *    This is based on db_value_print() but has extensions for the
- *    handling of set descriptors, and ELO's used by the desc_ module.
- *    String printing is also hacked for "unprintable" characters.
- */
-int
-desc_value_special_fprint (TEXT_OUTPUT * tout, DB_VALUE * value)
-{
-  int error = NO_ERROR;
-
-  switch (DB_VALUE_TYPE (value))
-    {
-    case DB_TYPE_SET:
-    case DB_TYPE_MULTISET:
-    case DB_TYPE_SEQUENCE:
-      CHECK_PRINT_ERROR (fprint_special_set (tout, DB_GET_SET (value)));
-      break;
-
-    case DB_TYPE_ELO:
-    case DB_TYPE_BLOB:
-    case DB_TYPE_CLOB:
-      printf (msgcat_message (MSGCAT_CATALOG_UTILS,
-			      MSGCAT_UTIL_SET_MIGDB,
-			      MIGDB_MSG_CANT_PRINT_ELO));
-      break;
-
-    default:
-      CHECK_PRINT_ERROR (fprint_special_strings (tout, value));
-      break;
-    }
-
-exit_on_end:
-  return error;
-
-exit_on_error:
-  CHECK_EXIT_ERROR (error);
-  goto exit_on_end;
-}
-
-
-/*
- * desc_value_fprint - Print a description of the given value.
- *    return: void
- *    fp(in): file pointer
- *    value(in): value container
- * Note:
- *    This is based on db_value_print() but has extensions for the
- *    handling of set descriptors, and ELO's used by the desc_ module.
- *    String printing is also hacked for "unprintable" characters.
- */
-void
-desc_value_fprint (FILE * fp, DB_VALUE * value)
-{
-  switch (DB_VALUE_TYPE (value))
-    {
-    case DB_TYPE_SET:
-    case DB_TYPE_MULTISET:
-    case DB_TYPE_SEQUENCE:
-      fprint_set (fp, DB_GET_SET (value));
-      break;
-
-    case DB_TYPE_ELO:
-    case DB_TYPE_BLOB:
-    case DB_TYPE_CLOB:
-      printf (msgcat_message (MSGCAT_CATALOG_UTILS,
-			      MSGCAT_UTIL_SET_MIGDB,
-			      MIGDB_MSG_CANT_PRINT_ELO));
-      break;
-
-    default:
-      db_value_fprint (fp, value);
-      break;
-    }
-}
-
-#if defined (CUBRID_DEBUG)
-/*
- * desc_value_print - Prints the description of a value to standard output.
- *    return: void
- *    value(in): value container
- */
-void
-desc_value_print (DB_VALUE * value)
-{
-  desc_value_fprint (stdout, value);
-}
-#endif
 
 /*
  * lo_migrate_out - This dumps the contents of an internal LO to the specified
@@ -2036,3 +1307,80 @@ clear_errid:
     }
   goto exit_on_end;
 }
+
+
+/*
+ * fprint_set - Print the contents of a real DB_SET (not a set descriptor).
+ *    return: void
+ *    fp(in): file pointer
+ *    set(in): set reference
+ */
+static void
+fprint_set (FILE * fp, DB_SET * set)
+{
+  DB_VALUE element_value;
+  int len, i;
+
+  len = set_size (set);
+  fprintf (fp, "{");
+  for (i = 0; i < len; i++)
+    {
+      if (set_get_element (set, i, &element_value) == NO_ERROR)
+	{
+	  desc_value_fprint (fp, &element_value);
+	  if (i < len - 1)
+	    {
+	      fprintf (fp, ", ");
+	    }
+	}
+    }
+  fprintf (fp, "}");
+}
+
+/*
+ * desc_value_fprint - Print a description of the given value.
+ *    return: void
+ *    fp(in): file pointer
+ *    value(in): value container
+ * Note:
+ *    This is based on db_value_print() but has extensions for the
+ *    handling of set descriptors, and ELO's used by the desc_ module.
+ *    String printing is also hacked for "unprintable" characters.
+ */
+void
+desc_value_fprint (FILE * fp, DB_VALUE * value)
+{
+  switch (DB_VALUE_TYPE (value))
+    {
+    case DB_TYPE_SET:
+    case DB_TYPE_MULTISET:
+    case DB_TYPE_SEQUENCE:
+      fprint_set (fp, DB_GET_SET (value));
+      break;
+
+    case DB_TYPE_ELO:
+    case DB_TYPE_BLOB:
+    case DB_TYPE_CLOB:
+      printf (msgcat_message (MSGCAT_CATALOG_UTILS,
+			      MSGCAT_UTIL_SET_MIGDB, MIGDB_MSG_CANT_PRINT_ELO));
+      break;
+
+    default:
+      db_value_fprint (fp, value);
+      break;
+    }
+}
+
+#if defined (CUBRID_DEBUG)
+/*
+ * desc_value_print - Prints the description of a value to standard output.
+ *    return: void
+ *    value(in): value container
+ */
+void
+desc_value_print (DB_VALUE * value)
+{
+  desc_value_fprint (stdout, value);
+}
+#endif
+
