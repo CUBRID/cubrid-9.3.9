@@ -259,8 +259,7 @@ struct _unloaddb_class_info
   DB_OBJECT *class_;
   OID *class_oid;
   SM_CLASS *class_ptr;
-  int referenced_class;
-  //extract_context *pctxt;
+  int referenced_class;  
 
 #if !defined(WINDOWS)
   S_WAITING_INFO wi_fetch;
@@ -1827,7 +1826,6 @@ process_class (int cl_no, int nthreads)
   unld_cls_info.class_oid = class_oid;
   unld_cls_info.class_ptr = class_ptr;
   unld_cls_info.class_ = class_;
-  //unld_cls_info.pctxt = &ctxt;
   unld_cls_info.referenced_class = referenced_class;
 #if !defined(WINDOWS)
   memset (&(unld_cls_info.wi_fetch), 0x00, sizeof (S_WAITING_INFO));
