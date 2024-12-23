@@ -544,9 +544,6 @@ unload_fetcher ()
   while ((nobjects != nfetched) && (error_occurred == false))
     {
       TIMER_BEGIN ((g_sampling_records >= 0), &(g_uci->wi_fetch));
-      //error = locator_fetch_all (hfid, &lock, fetch_type, class_oid, &nobjects, &nfetched, &last_oid, &fetch_area,
-	//			 g_request_pages, g_parallel_process_cnt,
-	//			 (g_parallel_process_idx - 1) /* to zero base */ );
       error = locator_fetch_all (hfid, &lock, class_oid, &nobjects, &nfetched, &last_oid, &fetch_area, g_request_pages);
       TIMER_END ((g_sampling_records >= 0), &(g_uci->wi_fetch));
       if (error == NO_ERROR)
@@ -1436,8 +1433,7 @@ extractobjects (const char *exec_name, int nthreads, int sampling_records, bool 
   /* flush remaining buffer */  
   if (!datafile_per_class)
     {
-      close_object_file ();  
-      status = 1;
+      close_object_file ();
     }
 
 /* in case of both normal and error */
