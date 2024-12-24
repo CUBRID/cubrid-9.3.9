@@ -272,6 +272,7 @@ struct _unloaddb_class_info
 };
 UNLD_CLASS_PARAM *g_uci = NULL;
 
+static char* exec_name_ptr = NULL;
 
 static int get_estimated_objs (HFID * hfid, INT64 *est_objects, bool enhanced);
 static int set_referenced_subclasses (DB_OBJECT * class_);
@@ -413,15 +414,14 @@ unload_extractor_thread (void *param)
   if (desc_obj == NULL)
     {
       thr_ret = ER_FAILED;
+      error_occurred = true;
     }
   else
     {        
       LC_COPYAREA_NODE *node = NULL;      
-      //cuberr::context * er_context_p;
-
-      // we need to register a context
-      //er_context_p = new cuberr::context ();
-      //er_context_p->register_thread_local ();
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+      er_register_client_thread();
+#endif
 
       while (extractor_thread_proc_terminate == false)
 	{
@@ -458,16 +458,22 @@ unload_extractor_thread (void *param)
 	  node = copyarea_list_get (g_uci->cparea_lst_ref);
 	}
 
-      //er_context_p->deregister_thread_local ();
-      //delete er_context_p;
-      //er_context_p = NULL;
-
       desc_free (desc_obj);
-    }
+      if (thr_ret != NO_ERROR)
+       {
+          error_occurred = true;
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+          if (!ignore_err_flag && (db_error_code () != NO_ERROR))
+	  {
+	     PRINT_AND_LOG_ERR_MSG ("%s: %s\n", exec_name_ptr, db_error_string (3));
+             // TODO: check, ctshim 
+	  }
+#endif           
+       }      
 
-  if (thr_ret != NO_ERROR)
-    {
-      error_occurred = true;
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)      
+      er_deregister_client_thread();
+#endif       
     }
 
   pthread_exit ((THREAD_RET_T) thr_ret);
@@ -906,6 +912,7 @@ extractobjects (const char *exec_name, int nthreads, int sampling_records, bool 
   
   // set sampling mode
   g_sampling_records = sampling_records;  
+  exec_name_ptr = exec_name;
 
   /* register new signal handlers */
   prev_intr_handler =
@@ -1846,6 +1853,10 @@ process_class (int cl_no, int nthreads)
 	  goto exit_on_end;
 	}
 
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+      er_init_client_thread();
+#endif
+
       for (i = 0; i < nthreads; i++)
 	{
 	  g_thr_param[i].thread_idx = i;
@@ -1890,6 +1901,10 @@ process_class (int cl_no, int nthreads)
 
       pthread_cond_broadcast (&unld_cls_info.cond);
       YIELD_THREAD ();
+
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+      er_quit_client_thread();
+#endif      
 
       for (i = 0; i < nthreads; i++)
 	{

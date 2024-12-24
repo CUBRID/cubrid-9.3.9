@@ -150,7 +150,7 @@ static const char *er_unknown_severity = "Unknown severity level";
  * Use this macro for freeing msg_area things so that you don't forget
  * and someday accidentally try to free the er_emergency_buf.
  */
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
 #define ER_FREE_AREA(area, th_entry) \
     do { \
       if ((area) && (area) != th_entry->er_emergency_buf) \
@@ -282,10 +282,35 @@ static FILE *er_accesslog_fh = NULL;
 
 static ER_FMT er_fmt_list[(-ER_LAST_ERROR) + 1];
 static int er_fmt_msg_fail_count = -ER_LAST_ERROR;
-#if !defined (SERVER_MODE)
+#if !defined (SERVER_MODE) 
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+
+//#define CLIENT_THREAD_DEBUG // TODO: test, ctshim
+typedef struct client_thread_entry  CLIENT_THREAD_ENTRY;
+struct client_thread_entry {      
+      ER_MSG     ermsg;
+      ER_MSG    *er_Msg;
+      char       er_emergency_buf[256];	
+#ifdef CLIENT_THREAD_DEBUG      
+      pthread_t tid;
+#endif      
+};
+
+static inline CLIENT_THREAD_ENTRY * get_client_thread_entry_info ();
+static CLIENT_THREAD_ENTRY g_ErrMsgEntry = {        
+        { 0, 0, NULL, 0, 0, NULL, NULL, NULL, 0 }, 
+        NULL,
+        { 0x00, }
+#ifdef CLIENT_THREAD_DEBUG         
+        , (pthread_t) (-1)
+#endif        
+      };
+#else
 static ER_MSG ermsg = { 0, 0, NULL, 0, 0, NULL, NULL, NULL, 0 };
 static ER_MSG *er_Msg = NULL;
 static char er_emergency_buf[256];	/* message when all else fails */
+#endif
+
 static er_log_handler_t er_Handler = NULL;
 #endif /* !SERVER_MODE */
 static unsigned int er_Eid = 0;
@@ -315,6 +340,8 @@ static FILE *er_file_backup (FILE * fp, const char *path);
 static bool logfile_opened = false;
 
 static int er_start (THREAD_ENTRY * th_entry);
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+static int er_start (CLIENT_THREAD_ENTRY * th_entry);
 #else /* SERVER_MODE */
 static int er_start (void);
 #endif /* SERVER_MODE */
@@ -338,6 +365,8 @@ static ER_FMT *er_create_fmt_msg (ER_FMT * fmt, int err_id, const char *msg);
 static void er_clear_fmt (ER_FMT * fmt);
 #if defined (SERVER_MODE)
 static int er_make_room (int size, THREAD_ENTRY * th_entry);
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+static int er_make_room (int size, CLIENT_THREAD_ENTRY * th_entry);
 #else /* SERVER_MODE */
 static int er_make_room (int size);
 #endif /* SERVER_MODE */
@@ -1087,7 +1116,11 @@ er_start (THREAD_ENTRY * th_entry)
  *       system when a fatal error condition is set, is defined.
  */
 static int
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+er_start (CLIENT_THREAD_ENTRY * th_entry)
+#else
 er_start (void)
+#endif
 {
   int status = NO_ERROR;
   int i;
@@ -1104,20 +1137,33 @@ er_start (void)
    * If the error module has already been initialized, shutted down
    * before it is reinitialized again.
    */
-
-  if (er_Msg != NULL)
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  ER_MSG* er_Msg = th_entry->er_Msg;
+#endif   
+  if (er_Msg != NULL)  
     {
       er_final ();
     }
 
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  th_entry->er_Msg = &th_entry->ermsg;
+  er_Msg = th_entry->er_Msg;
+#else
   er_Msg = &ermsg;
+#endif
+
   er_Msg->err_id = NO_ERROR;
   er_Msg->severity = ER_WARNING_SEVERITY;
   er_Msg->file_name = er_cached_msg[ER_ER_UNKNOWN_FILE];
   er_Msg->line_no = -1;
   er_Msg->stack = NULL;
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  er_Msg->msg_area = th_entry->er_emergency_buf;
+  er_Msg->msg_area_size = sizeof (th_entry->er_emergency_buf);
+#else  
   er_Msg->msg_area = er_emergency_buf;
   er_Msg->msg_area_size = sizeof (er_emergency_buf);
+#endif
   er_Msg->args = NULL;
   er_Msg->nargs = 0;
 
@@ -1351,18 +1397,34 @@ er_final (void)
 	}
     }
 
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
+   er_Msg = th_entry->er_Msg;
+#endif   
+
   if (er_Msg != NULL)
     {
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+      ER_FREE_AREA (er_Msg->msg_area, th_entry);
+      er_Msg->msg_area = th_entry->er_emergency_buf;
+      er_Msg->msg_area_size = sizeof (th_entry->er_emergency_buf);
+#else
       ER_FREE_AREA (er_Msg->msg_area);
       er_Msg->msg_area = er_emergency_buf;
       er_Msg->msg_area_size = sizeof (er_emergency_buf);
+#endif      
       if (er_Msg->args)
 	{
 	  free_and_init (er_Msg->args);
 	}
       er_Msg->nargs = 0;
 
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+      th_entry->er_Msg = NULL;
+#else 
       er_Msg = NULL;
+#endif      
     }
 
   for (i = 0; i < (int) DIM (er_cached_msg); i++)
@@ -1393,13 +1455,15 @@ er_clear (void)
   int size;
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   if (th_entry->er_Msg == NULL)
     {
       (void) er_start (th_entry);
-    }
+    }   
 
   th_entry->er_Msg->err_id = NO_ERROR;
   th_entry->er_Msg->severity = ER_WARNING_SEVERITY;
@@ -1411,7 +1475,7 @@ er_clear (void)
   if (er_Msg == NULL)
     {
       (void) er_start ();
-    }
+    }      
 
   er_Msg->err_id = NO_ERROR;
   er_Msg->severity = ER_WARNING_SEVERITY;
@@ -1622,6 +1686,9 @@ er_set_internal (int severity, const char *file_name, const int line_no,
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry;
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry;
 #endif
 
   if (er_hasalready_initiated == false)
@@ -1632,7 +1699,17 @@ er_set_internal (int severity, const char *file_name, const int line_no,
 #if defined (SERVER_MODE)
   th_entry = thread_get_thread_entry_info ();
   er_Msg = th_entry->er_Msg;
-#endif
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  th_entry = get_client_thread_entry_info ();
+  er_Msg = th_entry->er_Msg;
+
+#ifdef CLIENT_THREAD_DEBUG
+  if(th_entry->tid == (pthread_t)(-1))
+     fprintf(stdout, "erset>>>: main\n");
+  else 
+     fprintf(stdout, "erset>>>: %ld\n", th_entry->tid);
+#endif     
+#endif  
 
   /*
    * Get the UNIX error message if needed. We need to get this as soon
@@ -1642,7 +1719,7 @@ er_set_internal (int severity, const char *file_name, const int line_no,
 
   memcpy (&ap, ap_ptr, sizeof (ap));
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   if (er_Msg == NULL)
     {
       (void) er_start (th_entry);
@@ -1657,7 +1734,7 @@ er_set_internal (int severity, const char *file_name, const int line_no,
       || (er_Msg->err_id == ER_INTERRUPTED))
     {
       er_stack_push ();
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
       er_Msg = th_entry->er_Msg;
 #endif
       need_stack_pop = true;
@@ -1698,7 +1775,7 @@ er_set_internal (int severity, const char *file_name, const int line_no,
     }
 
   /* Do any necessary allocation for the buffer. */
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   if (er_make_room (new_size + 1, th_entry) == ER_FAILED)
     {
       ret_val = ER_FAILED;
@@ -2072,9 +2149,11 @@ er_errid (void)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
 
   return ((th_entry->er_Msg != NULL) ? th_entry->er_Msg->err_id : NO_ERROR);
@@ -2092,9 +2171,11 @@ er_clearid (void)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();  
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)  
   assert (th_entry != NULL);
 
   if (th_entry->er_Msg != NULL)
@@ -2119,9 +2200,11 @@ er_setid (int err_id)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
 
   if (th_entry->er_Msg != NULL)
@@ -2145,9 +2228,11 @@ er_severity (void)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
 
   return ((th_entry->er_Msg != NULL) ? th_entry->er_Msg->severity
@@ -2167,10 +2252,12 @@ er_has_error (void)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
   int severity;
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB) 
   assert (th_entry != NULL);
 
   severity = ((th_entry->er_Msg != NULL) ? th_entry->er_Msg->severity
@@ -2266,9 +2353,11 @@ er_msg ()
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB) 
   assert (th_entry != NULL);
 
   if (th_entry->er_Msg == NULL)
@@ -2324,9 +2413,12 @@ er_all (int *err_id, int *severity, int *n_levels, int *line_no,
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 #endif /* SERVER_MODE */
@@ -2417,9 +2509,12 @@ _er_log_debug (const char *file_name, const int line_no, const char *fmt, ...)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();  
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 #endif /* SERVER_MODE */
@@ -2432,7 +2527,7 @@ _er_log_debug (const char *file_name, const int line_no, const char *fmt, ...)
 	{
 	  doing_er_start = true;
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
 	  (void) er_start (th_entry);
 	  er_Msg = th_entry->er_Msg;
 #else /* SERVER_MODE */
@@ -2500,9 +2595,12 @@ er_get_area_error (void *buffer, int *length)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 #endif /* SERVER_MODE */
@@ -2555,9 +2653,12 @@ er_set_area_error (void *server_area)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 
@@ -2597,7 +2698,7 @@ er_set_area_error (void *server_area)
      be sending this. Use the actual string length in the memcpy here! */
   length = strlen (ptr) + 1;
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   if (er_make_room (length, th_entry) == NO_ERROR)
     {
       memcpy (er_Msg->msg_area, ptr, length);
@@ -2652,9 +2753,12 @@ er_stack_push (void)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 #endif /* SERVER_MODE */
@@ -2682,7 +2786,7 @@ er_stack_push (void)
   new_msg->nargs = 0;
 
   /* Now make er_Msg be the new thing. */
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   th_entry->er_Msg = new_msg;
 #else
   er_Msg = new_msg;
@@ -2703,9 +2807,12 @@ er_stack_pop (void)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();  
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 
@@ -2721,13 +2828,13 @@ er_stack_pop (void)
 #endif /* SERVER_MODE */
 
   old_msg = er_Msg;
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   th_entry->er_Msg = er_Msg->stack;
 #else
   er_Msg = er_Msg->stack;
 #endif
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   ER_FREE_AREA (old_msg->msg_area, th_entry);
 #else /* SERVER_MODE */
   ER_FREE_AREA (old_msg->msg_area);
@@ -2755,9 +2862,12 @@ er_stack_clear (void)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   er_Msg = th_entry->er_Msg;
   if (er_Msg == NULL || er_Msg == &th_entry->ermsg)
     {
@@ -2772,7 +2882,7 @@ er_stack_clear (void)
 
   next_msg = er_Msg->stack;
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   ER_FREE_AREA (next_msg->msg_area, th_entry);
 #else /* SERVER_MODE */
   ER_FREE_AREA (next_msg->msg_area);
@@ -2788,7 +2898,7 @@ er_stack_clear (void)
   next_msg->stack = save_stack;
 
   free_and_init (er_Msg);
-#if defined  SERVER_MODE
+#if defined(SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   th_entry->er_Msg = next_msg;
 #else /* SERVER_MODE */
   er_Msg = next_msg;
@@ -2804,9 +2914,11 @@ er_stack_clearall (void)
 {
 #if defined (SERVER_MODE)
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)    
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
 
   if (th_entry->er_Msg != NULL)
@@ -3343,7 +3455,7 @@ er_internal_msg (ER_FMT * fmt, int code, int msg_num)
   fmt->must_free = 0;
 }
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB) 
 /*
  * enclosing_method -
  *   return:
@@ -3353,7 +3465,11 @@ er_internal_msg (ER_FMT * fmt, int code, int msg_num)
  * Note:
  */
 static int
+#if defined(SERVER_MODE) 
 er_make_room (int size, THREAD_ENTRY * th_entry)
+#else
+er_make_room (int size, CLIENT_THREAD_ENTRY * th_entry)
+#endif
 {
   ER_MSG *er_Msg = th_entry->er_Msg;
   if (th_entry->er_Msg->msg_area_size < size)
@@ -3441,9 +3557,12 @@ er_emergency (const char *file, int line, const char *fmt, ...)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
   er_Msg = th_entry->er_Msg;
 
@@ -3457,7 +3576,7 @@ er_emergency (const char *file, int line, const char *fmt, ...)
   er_Msg->file_name = file;
   er_Msg->line_no = line;
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   er_Msg->msg_area = th_entry->er_emergency_buf;
   er_Msg->msg_area_size = sizeof (th_entry->er_emergency_buf);
 #else /* SERVER_MODE */
@@ -3530,7 +3649,7 @@ er_emergency (const char *file, int line, const char *fmt, ...)
    * do it if it reaches the end of the buffer).
    */
   strncat (er_Msg->msg_area, p, limit);
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   er_Msg->msg_area[sizeof (th_entry->er_emergency_buf) - 1] = '\0';
 #else /* SERVER_MODE */
   er_Msg->msg_area[sizeof (er_emergency_buf) - 1] = '\0';
@@ -3559,13 +3678,17 @@ er_vsprintf (ER_FMT * fmt, va_list * ap)
 #if defined (SERVER_MODE)
   ER_MSG *er_Msg;
   THREAD_ENTRY *th_entry = thread_get_thread_entry_info ();
+#elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
+  ER_MSG* er_Msg;
+  CLIENT_THREAD_ENTRY *th_entry = get_client_thread_entry_info();
 #endif /* SERVER_MODE */
 
-#if defined (SERVER_MODE)
+#if defined (SERVER_MODE) || defined(USE_CLIENT_THREAD_4_UNLOADDB)
   assert (th_entry != NULL);
 
   er_Msg = th_entry->er_Msg;
 #endif /* SERVER_MODE */
+
 
   /*
    *                  *** WARNING ***
@@ -3767,3 +3890,137 @@ er_csect_enter_log_file (void)
   return ret;
 }
 #endif
+
+#if !defined(SERVER_MODE) && defined(USE_CLIENT_THREAD_4_UNLOADDB)
+
+static int use_client_thread = 0;
+
+#if defined(HPUX)
+static __thread CLIENT_THREAD_ENTRY *cte_ptr;
+#else /* HPUX */
+static pthread_key_t css_Client_Thread_key;
+#endif /* HPUX */
+
+static inline CLIENT_THREAD_ENTRY *
+get_client_thread_entry_info ()
+{
+  if(use_client_thread == 0)
+  {      
+     return &g_ErrMsgEntry;
+  }
+
+#ifdef HPUX 
+  assert(cte_ptr);
+  return cte_ptr;
+#else
+  void *p = pthread_getspecific (css_Client_Thread_key);
+
+#ifdef CLIENT_THREAD_DEBUG
+  if(p)
+    fprintf(stdout, "tid: %ld\n", ((CLIENT_THREAD_ENTRY *) p)->tid);
+  else
+    fprintf(stdout, "tid: main\n");   
+#endif    
+
+  return (p) ? ((CLIENT_THREAD_ENTRY *) p) :  &g_ErrMsgEntry;
+#endif  
+}
+
+/* er_init_client_thread()
+ * This function should not be called inside a thread.
+ * It should be called before creating threads.
+*/
+int 
+er_init_client_thread()
+{
+#ifdef HPUX        
+  cte_ptr = &g_ErrMsgEntry;
+#else
+  int r;
+
+  r = pthread_key_create (&css_Client_Thread_key, NULL);
+  if (r != 0)
+    {
+      er_set_with_oserror (ER_ERROR_SEVERITY, ARG_FILE_LINE,
+			   ER_CSS_PTHREAD_KEY_CREATE, 0);
+      return ER_CSS_PTHREAD_KEY_CREATE;
+    }
+
+   r = pthread_setspecific (css_Client_Thread_key, (void *) &g_ErrMsgEntry);
+   if (r != 0)
+    {
+      er_set_with_oserror (ER_ERROR_SEVERITY, ARG_FILE_LINE,
+			   ER_CSS_PTHREAD_SETSPECIFIC, 0);
+      return ER_CSS_PTHREAD_SETSPECIFIC;
+    }
+#endif
+  use_client_thread = 1;  
+#ifdef CLIENT_THREAD_DEBUG
+  fprintf(stdout, "er_init_client_thread()=================================\n");   
+#endif
+  return r;
+}
+
+/* er_quit_client_thread()
+ * This function should not be called inside a thread.
+ * It should be called after terminating threads.
+*/
+void 
+er_quit_client_thread()
+{
+#ifdef HPUX
+   ;
+#else
+  pthread_key_delete (css_Client_Thread_key);
+#endif /* not HPUX */
+
+  use_client_thread =  0;
+#ifdef CLIENT_THREAD_DEBUG
+  fprintf(stdout, "er_quit_client_thread()=================================\n");   
+#endif  
+}
+
+int
+er_register_client_thread()
+{
+#ifdef HPUX        
+  return NO_ERROR;
+#else
+   int r;
+   CLIENT_THREAD_ENTRY* entry_p;
+   
+   entry_p = malloc(sizeof(CLIENT_THREAD_ENTRY));
+   assert(entry_p);
+
+   memset(entry_p, 0x00, sizeof(CLIENT_THREAD_ENTRY));
+#ifdef CLIENT_THREAD_DEBUG   
+   entry_p->tid = pthread_self();
+#endif   
+   r = pthread_setspecific (css_Client_Thread_key, (void *) entry_p);
+   if (r != 0)
+    {
+      er_set_with_oserror (ER_ERROR_SEVERITY, ARG_FILE_LINE,
+			   ER_CSS_PTHREAD_SETSPECIFIC, 0);
+      return ER_CSS_PTHREAD_SETSPECIFIC;
+    }
+#endif
+   return NO_ERROR;
+}
+
+void 
+er_deregister_client_thread()
+{
+  er_stack_clearall();
+  er_clear ();
+#ifdef HPUX
+   ;
+#else        
+    void *p = pthread_getspecific (css_Client_Thread_key);
+    if(p)
+      {   
+        free(p);
+      }
+#endif
+}
+#endif // #if !defined(SERVER_MODE) && defined(USE_CLIENT_THREAD_4_UNLOADDB)
+
