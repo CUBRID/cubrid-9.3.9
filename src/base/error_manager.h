@@ -265,10 +265,10 @@ extern bool er_has_error (void);
 #define USE_CLIENT_THREAD_4_UNLOADDB
 
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)
-extern int er_init_client_thread();
-extern void er_quit_client_thread();
-extern int er_register_client_thread();
-extern void er_deregister_client_thread();
+extern int er_init_client_thread ();
+extern void er_quit_client_thread ();
+extern int er_register_client_thread ();
+extern void er_deregister_client_thread ();
 #endif
 #endif
 

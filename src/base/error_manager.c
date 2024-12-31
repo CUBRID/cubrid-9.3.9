@@ -285,15 +285,11 @@ static int er_fmt_msg_fail_count = -ER_LAST_ERROR;
 #if !defined (SERVER_MODE) 
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)
 
-//#define CLIENT_THREAD_DEBUG // TODO: test, ctshim
 typedef struct client_thread_entry  CLIENT_THREAD_ENTRY;
 struct client_thread_entry {      
       ER_MSG     ermsg;
       ER_MSG    *er_Msg;
-      char       er_emergency_buf[256];	
-#ifdef CLIENT_THREAD_DEBUG      
-      pthread_t tid;
-#endif      
+      char       er_emergency_buf[256];
 };
 
 static inline CLIENT_THREAD_ENTRY * get_client_thread_entry_info ();
@@ -301,9 +297,6 @@ static CLIENT_THREAD_ENTRY g_ErrMsgEntry = {
         { 0, 0, NULL, 0, 0, NULL, NULL, NULL, 0 }, 
         NULL,
         { 0x00, }
-#ifdef CLIENT_THREAD_DEBUG         
-        , (pthread_t) (-1)
-#endif        
       };
 #else
 static ER_MSG ermsg = { 0, 0, NULL, 0, 0, NULL, NULL, NULL, 0 };
@@ -1701,14 +1694,7 @@ er_set_internal (int severity, const char *file_name, const int line_no,
   er_Msg = th_entry->er_Msg;
 #elif defined(USE_CLIENT_THREAD_4_UNLOADDB)  
   th_entry = get_client_thread_entry_info ();
-  er_Msg = th_entry->er_Msg;
-
-#ifdef CLIENT_THREAD_DEBUG
-  if(th_entry->tid == (pthread_t)(-1))
-     fprintf(stdout, "erset>>>: main\n");
-  else 
-     fprintf(stdout, "erset>>>: %ld\n", th_entry->tid);
-#endif     
+  er_Msg = th_entry->er_Msg;  
 #endif  
 
   /*
@@ -3910,17 +3896,10 @@ get_client_thread_entry_info ()
   }
 
 #ifdef HPUX 
-  assert(cte_ptr);
+  assert (cte_ptr);
   return cte_ptr;
 #else
   void *p = pthread_getspecific (css_Client_Thread_key);
-
-#ifdef CLIENT_THREAD_DEBUG
-  if(p)
-    fprintf(stdout, "tid: %ld\n", ((CLIENT_THREAD_ENTRY *) p)->tid);
-  else
-    fprintf(stdout, "tid: main\n");   
-#endif    
 
   return (p) ? ((CLIENT_THREAD_ENTRY *) p) :  &g_ErrMsgEntry;
 #endif  
@@ -3955,9 +3934,6 @@ er_init_client_thread()
     }
 #endif
   use_client_thread = 1;  
-#ifdef CLIENT_THREAD_DEBUG
-  fprintf(stdout, "er_init_client_thread()=================================\n");   
-#endif
   return r;
 }
 
@@ -3973,11 +3949,7 @@ er_quit_client_thread()
 #else
   pthread_key_delete (css_Client_Thread_key);
 #endif /* not HPUX */
-
   use_client_thread =  0;
-#ifdef CLIENT_THREAD_DEBUG
-  fprintf(stdout, "er_quit_client_thread()=================================\n");   
-#endif  
 }
 
 int
@@ -3989,18 +3961,15 @@ er_register_client_thread()
    int r;
    CLIENT_THREAD_ENTRY* entry_p;
    
-   entry_p = malloc(sizeof(CLIENT_THREAD_ENTRY));
-   assert(entry_p);
+   entry_p = malloc (sizeof(CLIENT_THREAD_ENTRY));
+   assert (entry_p);
 
-   memset(entry_p, 0x00, sizeof(CLIENT_THREAD_ENTRY));
-#ifdef CLIENT_THREAD_DEBUG   
-   entry_p->tid = pthread_self();
-#endif   
+   memset (entry_p, 0x00, sizeof(CLIENT_THREAD_ENTRY));
+
    r = pthread_setspecific (css_Client_Thread_key, (void *) entry_p);
    if (r != 0)
     {
-      er_set_with_oserror (ER_ERROR_SEVERITY, ARG_FILE_LINE,
-			   ER_CSS_PTHREAD_SETSPECIFIC, 0);
+      assert (0);
       return ER_CSS_PTHREAD_SETSPECIFIC;
     }
 #endif
@@ -4010,7 +3979,7 @@ er_register_client_thread()
 void 
 er_deregister_client_thread()
 {
-  er_stack_clearall();
+  er_stack_clearall ();
   er_clear ();
 #ifdef HPUX
    ;
@@ -4018,7 +3987,7 @@ er_deregister_client_thread()
     void *p = pthread_getspecific (css_Client_Thread_key);
     if(p)
       {   
-        free(p);
+        free (p);
       }
 #endif
 }

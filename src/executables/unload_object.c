@@ -420,7 +420,7 @@ unload_extractor_thread (void *param)
     {        
       LC_COPYAREA_NODE *node = NULL;      
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)
-      er_register_client_thread();
+      er_register_client_thread ();
 #endif
 
       while (extractor_thread_proc_terminate == false)
@@ -466,13 +466,12 @@ unload_extractor_thread (void *param)
           if (!ignore_err_flag && (db_error_code () != NO_ERROR))
 	  {
 	     PRINT_AND_LOG_ERR_MSG ("%s: %s\n", exec_name_ptr, db_error_string (3));
-             // TODO: check, ctshim 
 	  }
 #endif           
        }      
 
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)      
-      er_deregister_client_thread();
+      er_deregister_client_thread ();
 #endif       
     }
 
@@ -1854,7 +1853,7 @@ process_class (int cl_no, int nthreads)
 	}
 
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)
-      er_init_client_thread();
+      er_init_client_thread ();
 #endif
 
       for (i = 0; i < nthreads; i++)
@@ -1903,7 +1902,7 @@ process_class (int cl_no, int nthreads)
       YIELD_THREAD ();
 
 #if defined(USE_CLIENT_THREAD_4_UNLOADDB)
-      er_quit_client_thread();
+      er_quit_client_thread ();
 #endif      
 
       for (i = 0; i < nthreads; i++)
