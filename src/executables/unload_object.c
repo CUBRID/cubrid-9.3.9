@@ -2000,6 +2000,7 @@ process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class, TEXT_O
   int data;
   int v = 0;
 
+  TIMER_BEGIN ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[1]));
   class_ptr = desc_obj->class_;
   class_oid = ws_oid (desc_obj->classop);
   if (!datafile_per_class && referenced_class)
@@ -2050,12 +2051,14 @@ process_object (DESC_OBJ * desc_obj, OID * obj_oid, int referenced_class, TEXT_O
       ++v;
     }
   CHECK_PRINT_ERROR (text_print (obj_out, "\n", 1, NULL));
+  TIMER_END ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[1]));
 
   return text_print_request_flush (obj_out, false);
 
 exit_on_error:
 
   CHECK_EXIT_ERROR (error);
+  TIMER_END ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[1]));
   return error;
 
 }
