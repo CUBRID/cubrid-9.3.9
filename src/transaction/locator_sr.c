@@ -2546,7 +2546,7 @@ xlocator_get_class (THREAD_ENTRY * thread_p, OID * class_oid, int class_chn,
 int
 xlocator_fetch_all (THREAD_ENTRY * thread_p, const HFID * hfid, LOCK * lock,
 		    OID * class_oid, int *nobjects, int *nfetched,
-		    OID * last_oid, LC_COPYAREA ** fetch_area)
+		    OID * last_oid, LC_COPYAREA ** fetch_area, int request_pages)
 {
   LC_COPYAREA_DESC prefetch_des;	/* Descriptor for decache of
 					 * objects related to transaction
@@ -2627,6 +2627,11 @@ xlocator_fetch_all (THREAD_ENTRY * thread_p, const HFID * hfid, LOCK * lock,
 
   /* Assume that the next object can fit in one page */
   copyarea_length = DB_PAGESIZE;
+
+  if (request_pages > 1)
+    {
+      copyarea_length *= request_pages;	/* reset multiple pages size */
+    }  
 
   while (true)
     {

@@ -605,7 +605,7 @@ pt_dbval_to_value (PARSER_CONTEXT * parser, const DB_VALUE * val)
       break;
 
     case DB_TYPE_NUMERIC:
-      strcpy (temp, numeric_db_value_print ((DB_VALUE *) val));
+      strcpy (temp, numeric_db_value_print ((DB_VALUE *) val, buf));
       result->info.value.data_value.str =
 	pt_append_nulstring (parser, (PARSER_VARCHAR *) NULL,
 			     (const char *) temp);

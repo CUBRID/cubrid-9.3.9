@@ -14388,7 +14388,12 @@ mr_readval_varbit_internal (OR_BUF * buf, DB_VALUE * value,
 	  precision = DB_MAX_VARBIT_PRECISION;
 	}
 
-      if (!copy)
+      if (size == 0)
+	{
+	  /* its NULL */
+	  db_value_domain_init (value, DB_TYPE_VARBIT, precision, 0);
+	}
+      else if (!copy)
 	{
 	  str_bit_length = or_get_varbit_length (buf, &rc);
 	  if (rc == NO_ERROR)

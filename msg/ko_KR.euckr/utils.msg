@@ -217,13 +217,13 @@ cubrid °ü¸®ÀÚ À¯Æ¿¸®Æ¼, ¹öÀü %1$s\n\
 »ç¿ë¹ı: %2$s heartbeat <¸í·É¾î> [ÀÎÀÚ]\n\
 \n\
 °¡¿ëÇÑ ¸í·É¾î:\n\
-    start          [µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§]\n\
-    stop           [-h <È£½ºÆ® ÀÌ¸§>] [-i] [µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§]\n\
-    copylogdb      <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
-    applylogdb     <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
-    prefetchlogdb  <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
-    plugin         <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§> local-database-name\n\
-    replication    <start|stop> <³ëµå ÀÌ¸§>\n\
+    start         [µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§]\n\    
+    stop          [-h <È£½ºÆ® ÀÌ¸§>] [-i] [µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§]\n\
+    copylogdb     <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
+    applylogdb    <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
+    prefetchlogdb <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§>\n\
+    plugin        <start|stop> <µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§> <³ëµå ÀÌ¸§> local-database-name\n\
+    replication   <start|stop> <³ëµå ÀÌ¸§>\n\
     status         [-v]\n\
     reload\n
 31 '%1$s' ÀÎÀÚ°¡ ÇÊ¿ä ¾ø½À´Ï´Ù.\n
@@ -353,8 +353,7 @@ $set 9 MSGCAT_UTIL_SET_MASTER
 18 ¼­¹ö %1$s´Â shutdownµË´Ï´Ù.\nÀÌ ÀÛ¾÷Àº ¸î ºĞ °É¸± ¼ö ÀÖ½À´Ï´Ù. Àá½Ã ±â´Ù¸®½Ê½Ã¿À.
 19 ¼­¹ö %1$s¸¦ Ã£À» ¼ö ¾ø½À´Ï´Ù
 20 ¸¶½ºÅÍ ¼­¹ö´Â %1$d ºĞ ³»¿¡ shutdown ÇÕ´Ï´Ù\n
-21 Heartbeat ±â´ÉÀÌ ºñÈ°¼ºÈ­ µÇ¾ú½À´Ï´Ù.Ù. ¸ğµç ¼­¹ö ÇÁ·Î¼¼½ºµéÀÇ Á¾·á°úÁ¤ÀÌ ¿Ï·áµÉ¶§ ±îÁö Àá½Ã ±â´Ù¸®½Ê½Ã¿À.\n
-
+21 Heartbeat ±â´ÉÀÌ ºñÈ°¼ºÈ­ µÇ¾ú½À´Ï´Ù. ¸ğµç ¼­¹ö ÇÁ·Î¼¼½ºµéÀÇ Á¾·á°úÁ¤ÀÌ ¿Ï·áµÉ¶§ ±îÁö Àá½Ã ±â´Ù¸®½Ê½Ã¿À.\n
 
 $set 10 MSGCAT_UTIL_SET_OPTIMIZEDB
 11 Ãâ·Â ÆÄÀÏ '%1$s' À»(¸¦) ¿­ ¼ö ¾ø½À´Ï´Ù\n
@@ -497,6 +496,8 @@ unloaddb: µ¥ÀÌÅÍº£ÀÌ½º¿¡¼­ ½ºÅ°¸¶¿Í °´Ã¼¸¦ ¾ğ·Îµå\n\
   -d, --data-only             ¿ÀºêÁ§Æ®¸¸ Ã³¸®; ±âº»°ª: ½ºÅ°¸¶¿Í ¿ÀºêÁ§Æ® Ã³¸®\n\
       --output-prefix=PREFIEX Ãâ·Â ÆÄÀÏÀÇ prefix; ±âº»°ª: µ¥ÀÌÅÍº£ÀÌ½º ÀÌ¸§ »ç¿ë\n\
       --hash-file=FILE        ÇØ½¬ ÆÄÀÏÀÌ¸§; ±âº»°ª: ÆÄÀÏÀ» »ı¼ºÇÏ±â À§ÇØ tmpnam()À» »ç¿ëÇÔ\n\
+  -t, --thread-count=COUNT    »ç¿ëÇÒ ½º·¹µå °³¼ö¸¦ ÁöÁ¤; ±âº»°ª: 1 ÃÖ´ë°ª: 127\n\
+      --enhanced-estimates    ¾ğ·ÎµåÇÒ Å×ÀÌºíÀÇ Á¤È®ÇÑ ·¹ÄÚµå °Ç¼ö ¼öÁı; ±âº»°ª : ¹ÌÀû¿ë\n\
   -v, --verbose               ¸¹Àº »óÅÂ ¸Ş½ÃÁö¸¦ Ãâ·Â; ±âº»°ª: Ãâ·Â ¾È ÇÔ\n\
       --use-delimiter         ½Äº°ÀÚ Ã³À½°ú ³¡¿¡ '"' »ç¿ë; ±âº»°ª: »ç¿ë ¾È ÇÔ\n\
   -S, --SA-mode               µ¶¸³ ¸ğµå ½ÇÇà\n\
@@ -561,7 +562,7 @@ compactdb: µ¥ÀÌÅÍº£ÀÌ½º¿¡¼­ »ç¿ëµÇÁö ¾Ê´Â ¿µ¿ªÀ» ÇØÁ¦.\n\
                                     Å¬¶óÀÌ¾ğÆ® ¼­¹ö ¸ğµå¿¡¼­¸¸ °¡´É\n\
   -c, --class-lock-timeout          Å¬·¡½º Àá±İ¿¡ ´ëÇÑ Å¸ÀÓ¾Æ¿ô\n\
                                     Å¬¶óÀÌ¾ğÆ® ¼­¹ö ¸ğµå¿¡¼­¸¸ °¡´É\n\
-  [Å×ÀÌºí1 Å×ÀÌºí2 ...]             Á¤¸®ÇÒ Å¬·¡½º ¸®½ºÆ®\n
+  [Å×ÀÌºí1 Å×ÀÌºí2 ...]             Á¤¸®ÇÒ Å×ÀÌºí ¸®½ºÆ®\n
 
 $set 15 MSGCAT_UTIL_SET_COMMDB
 21 CUBRID master°¡ È£½ºÆ® %1$s ¿¡¼­ ¼öÇà ÁßÀÔ´Ï´Ù. %2$s ¿¡ ½ÃÀÛµÇ¾î  
@@ -582,7 +583,7 @@ cub_commdb: ÀÌ À¯Æ¿¸®Æ¼´Â ´õ ÀÌ»ó »ç¿ëÇÏÁö ¾Ê½À´Ï´Ù. 'cubrid' ¸í·ÉÀ» »ç¿ëÇÏ½Ê½Ã¿
   -c, --server-mode=NAME           ÇØ´ç µ¥ÀÌÅÍº£ÀÌ½º ¼­¹öÀÇ HA ¸ğµå Ãâ·Â\n\
   -N, --node-list                  CUBRID heartbeat¿¡ ÀÇÇØ °ü¸®µÇ´Â ³ëµå Á¶È¸\n\
   -L, --process-list               CUBRID heartbeat¿¡ ÀÇÇØ °ü¸®µÇ´Â ·ÎÄÃ ÇÁ·Î¼¼½º Á¤º¸ Á¶È¸\n\
-  -c, --ping-host                  CUBRID heartbeat¸¦ À§ÇÑ ping È£½ºÆ® Á¤º¸ Á¶È¸\n\
+  -p, --ping-host                  CUBRID heartbeat¸¦ À§ÇÑ ping È£½ºÆ® Á¤º¸ Á¶È¸\n\
   -D, --dereg-process=PID          ´ë»ó ÇÁ·Î¼¼½º¸¦ Á¾·áÇÏ°í °ü¸® ´ë»ó ¸ñ·Ï¿¡¼­ Á¦°Å\n\
   -F, --reconfig-node-list         CUBRID heartbeat ³ëµå ¼³Á¤ Á¤º¸¸¦ Àç Àû¿ë\n\
   -V, --verbose                    ¸¹Àº »óÅÂ ¸Ş½ÃÁö Ãâ·Â; ±âº»°ª: Ãâ·ÂÇÏÁö ¾ÊÀ½\n
@@ -914,6 +915,7 @@ valid options:\n\
       --max-mem-size=SIZE     MB ´ÜÀ§ÀÇ ÃÖ´ë ÇÁ·Î¼¼½º Å©±â(SIZE); ÃÖ´ë°ª 500\n\
   -p, --plugin                apply plugin ½ÇÇà\n\
   -s, --source-db-name        database name of log source\n
+
 
 $set 43 MSGCAT_UTIL_SET_STATDUMP
 11 Ãâ·Â ÆÄÀÏ '%1$s'À» ¿­ ¼ö ¾ø½À´Ï´Ù.\n

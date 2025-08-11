@@ -108,7 +108,7 @@ extern int xlocator_get_class (THREAD_ENTRY * thread_p, OID * class_oid,
 extern int xlocator_fetch_all (THREAD_ENTRY * thread_p, const HFID * hfid,
 			       LOCK * lock, OID * class_oid, int *nobjects,
 			       int *nfetched, OID * last_oid,
-			       LC_COPYAREA ** fetch_area);
+			       LC_COPYAREA ** fetch_area, int request_pages);
 extern int xlocator_lock_and_fetch_all (THREAD_ENTRY * thread_p,
 					const HFID * hfid,
 					LOCK * instance_lock,

@@ -496,6 +496,8 @@ unloaddb: 从数据库导出对象和结构.\n\
   -d, --data-only             只转储对象; 默认: 结构和对象\n\
       --output-prefix=PREFIEX 指定输出文件的前缀; 默认: 数据库名\n\
       --hash-file=FILE        指定hash文件名称; 默认: 由 tmpnam() 生成\n\
+  -t, --thread-count=COUNT    Number of threads; default: 1 maximum: 127\n\
+      --enhanced-estimates    Obtaining the exact number of records in the table to unload; default: disabled\n\
   -v, --verbose               开启详细状态信息; 默认: 不可用\n\
       --use-delimiter         用 '"' 作为一个标示符的开始和结束; 默认: 不使用\n\
   -S, --SA-mode               单机模式执行\n\

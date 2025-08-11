@@ -496,6 +496,8 @@ geçerli seçenekler:\n\
   -d, --data-only             dökümü nesneleri yalnızca; varsayılan: şema ve objeler\n\
       --output-prefix=PREFIEX Çıktı dosyaları için PREFIEX; varsayılan: veritabanı adı\n\
       --hash-file=FILE        Karma için FILE varsayılan: tmpnam tarafından oluşturmak ()\n\
+  -t, --thread-count=COUNT    Number of threads; default: 1 maximum: 127\n\
+      --enhanced-estimates    Obtaining the exact number of records in the table to unload; default: disabled\n\
   -v, --verbose               Ayrıntılı durum mesajları sağlamak; varsayılan: devre dışı\n\
       --use-delimiter         kullanımı '"' bir tanımlayıcı nereden başlayıp nerede bittiği; varsayılan: kullanmayın\n\
   -S, --SA-mode               stand-alone modu yürütme\n\

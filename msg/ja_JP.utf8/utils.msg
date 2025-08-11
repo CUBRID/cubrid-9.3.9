@@ -496,6 +496,8 @@ unloaddb: データベースからスキーマとオブジェクトをアンロ�
   -d, --data-only             オブジェクトだけを処理; デフォルト: スキーマとオブジェクト処理\n\
       --output-prefix=PREFIEX 出力ファイルのprefix; デフォルト: データベース名\n\
       --hash-file=FILE        ハッシュファイル名; デフォルト: ファイルを作るために「tmpnam()」使う。\n\
+  -t, --thread-count=COUNT    Number of threads; default: 1 maximum: 127\n\
+      --enhanced-estimates    Obtaining the exact number of records in the table to unload; default: disabled\n\
   -v, --verbose               多様な進行情報を出力; デフォルト: 出力しない\n\
       --use-delimiter         識別者の最初と最後に「"」をつける; デフォルト: つけない\n\
   -S, --SA-mode               独立モードで実行\n\

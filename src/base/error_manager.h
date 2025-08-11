@@ -260,4 +260,16 @@ extern void er_clearid (void);
 extern void er_setid (int err_id);
 
 extern bool er_has_error (void);
+
+#if !defined(SERVER_MODE) 
+#define USE_CLIENT_THREAD_4_UNLOADDB
+
+#if defined(USE_CLIENT_THREAD_4_UNLOADDB)
+extern int er_init_client_thread ();
+extern void er_quit_client_thread ();
+extern int er_register_client_thread ();
+extern void er_deregister_client_thread ();
+#endif
+#endif
+
 #endif /* _ERROR_MANAGER_H_ */

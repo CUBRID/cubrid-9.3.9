@@ -27,6 +27,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 #include "porting.h"
 #include "memory_alloc.h"
@@ -580,7 +581,7 @@ locator_pack_copy_area_descriptor (int num_objs, LC_COPYAREA * copyarea,
  */
 char *
 locator_unpack_copy_area_descriptor (int num_objs, LC_COPYAREA * copyarea,
-				     char *desc)
+				     char *desc, int packed_desc_size)
 {
   LC_COPYAREA_MANYOBJS *mobjs;	/* Describe multiple objects in area */
   LC_COPYAREA_ONEOBJ *obj;	/* Describe on object in area        */
@@ -589,18 +590,29 @@ locator_unpack_copy_area_descriptor (int num_objs, LC_COPYAREA * copyarea,
 
   mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (copyarea);
   mobjs->num_objs = num_objs;
-  for (i = 0, obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
-       i < num_objs; i++, obj = LC_NEXT_ONEOBJ_PTR_IN_COPYAREA (obj))
+
+  if (packed_desc_size > 0)
     {
-      desc = or_unpack_int (desc, &ope);
-      obj->operation = (LC_COPYAREA_OPERATION) ope;
-      desc = or_unpack_int (desc, &obj->has_index);
-      desc = or_unpack_hfid (desc, &obj->hfid);
-      desc = or_unpack_oid (desc, &obj->class_oid);
-      desc = or_unpack_oid (desc, &obj->oid);
-      desc = or_unpack_int (desc, &obj->length);
-      desc = or_unpack_int (desc, &obj->offset);
-      desc = or_unpack_int (desc, &obj->error_code);
+      obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
+      obj -= num_objs;
+      obj++;
+      memcpy (obj, desc, packed_desc_size);
+    }
+  else
+    {
+      for (i = 0, obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
+	   i < num_objs; i++, obj = LC_NEXT_ONEOBJ_PTR_IN_COPYAREA (obj))
+	{
+	  desc = or_unpack_int (desc, &ope);
+	  obj->operation = (LC_COPYAREA_OPERATION) ope;
+	  desc = or_unpack_int (desc, &obj->has_index);
+	  desc = or_unpack_hfid (desc, &obj->hfid);
+	  desc = or_unpack_oid (desc, &obj->class_oid);
+	  desc = or_unpack_oid (desc, &obj->oid);
+	  desc = or_unpack_int (desc, &obj->length);
+	  desc = or_unpack_int (desc, &obj->offset);
+	  desc = or_unpack_int (desc, &obj->error_code);
+	}
     }
   return desc;
 }
@@ -628,12 +640,12 @@ locator_unpack_copy_area_descriptor (int num_objs, LC_COPYAREA * copyarea,
 int
 locator_send_copy_area (LC_COPYAREA * copyarea, char **contents_ptr,
 			int *contents_length, char **desc_ptr,
-			int *desc_length)
+			int *desc_length, bool encode_endian)
 {
   LC_COPYAREA_MANYOBJS *mobjs;	/* Describe multiple objects in area */
   LC_COPYAREA_ONEOBJ *obj;	/* Describe on object in area        */
   int offset = -1;
-  int i;
+  int i, len;
   char *end;
 
   *contents_ptr = copyarea->mem;
@@ -642,12 +654,14 @@ locator_send_copy_area (LC_COPYAREA * copyarea, char **contents_ptr,
   mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (copyarea);
   *desc_length =
     DB_ALIGN (LC_AREA_ONEOBJ_PACKED_SIZE, MAX_ALIGNMENT) * mobjs->num_objs;
-  *desc_ptr = (char *) malloc (*desc_length);
-
-  if (!*desc_ptr)
+  if (encode_endian)
     {
-      *desc_length = 0;
-      return 0;
+      *desc_ptr = (char *) malloc (*desc_length);
+      if (*desc_ptr == NULL)
+	{
+	  *desc_length = 0;
+	  return 0;
+	}
     }
 
   /* Find the length of the content area and pack the descriptor area */
@@ -674,9 +688,24 @@ locator_send_copy_area (LC_COPYAREA * copyarea, char **contents_ptr,
 	}
     }
 
-  end = locator_pack_copy_area_descriptor (mobjs->num_objs, copyarea,
+  if (encode_endian)
+    {
+      end =
+	locator_pack_copy_area_descriptor (mobjs->num_objs, copyarea,
 					   *desc_ptr);
-  *desc_length = CAST_BUFLEN (end - *desc_ptr);
+      len = CAST_BUFLEN (end - *desc_ptr);
+    }
+  else
+    {
+      obj = &mobjs->objs;
+      obj -= mobjs->num_objs;
+
+      *desc_ptr = (char *) (obj + 1);
+      len = CAST_BUFLEN ((char *) &mobjs->objs - (char *) obj);
+    }
+
+  assert (len <= *desc_length);
+  *desc_length = len;
 
   return mobjs->num_objs;
 }

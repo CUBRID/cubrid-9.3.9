@@ -475,7 +475,7 @@ slocator_fetch (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, true);
     }
   else
     {
@@ -560,7 +560,7 @@ slocator_get_class (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, true);
     }
   else
     {
@@ -620,7 +620,7 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
   LC_COPYAREA *copy_area;
   int success;
   char *ptr;
-  OR_ALIGNED_BUF (NET_COPY_AREA_SENDRECV_SIZE + (OR_INT_SIZE * 4) +
+  OR_ALIGNED_BUF (NET_COPY_AREA_SENDRECV_SIZE + (OR_INT_SIZE * 5) +
 		  OR_OID_SIZE) a_reply;
   char *reply = OR_ALIGNED_BUF_START (a_reply);
   char *desc_ptr = NULL;
@@ -628,6 +628,12 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
   char *content_ptr;
   int content_size;
   int num_objs = 0;
+  int request_pages;  
+  NET_ENDIAN server_endian;
+  int client_endian;
+  int encode_endian = 1;
+
+  GET_ENDIAN_TYPE(server_endian);
 
   ptr = or_unpack_hfid (request, &hfid);
   ptr = or_unpack_lock (ptr, &lock);
@@ -635,10 +641,17 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
   ptr = or_unpack_int (ptr, &nobjects);
   ptr = or_unpack_int (ptr, &nfetched);
   ptr = or_unpack_oid (ptr, &last_oid);
+  ptr = or_unpack_int (ptr, &request_pages);  
+  ptr = or_unpack_int (ptr, &client_endian);
+
+  if ((NET_ENDIAN) client_endian == server_endian && server_endian != NET_ENDIAN_UNKNOWN)
+    {
+      encode_endian = 0;
+    }  
 
   copy_area = NULL;
   success = xlocator_fetch_all (thread_p, &hfid, &lock, &class_oid, &nobjects,
-				&nfetched, &last_oid, &copy_area);
+				&nfetched, &last_oid, &copy_area, request_pages);
 
   if (success != NO_ERROR)
     {
@@ -649,7 +662,7 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, (bool) encode_endian);
     }
   else
     {
@@ -664,6 +677,7 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
   ptr = or_pack_int (reply, num_objs);
   ptr = or_pack_int (ptr, desc_size);
   ptr = or_pack_int (ptr, content_size);
+  ptr = or_pack_int (ptr, encode_endian);
   ptr = or_pack_lock (ptr, lock);
   ptr = or_pack_int (ptr, nobjects);
   ptr = or_pack_int (ptr, nfetched);
@@ -684,7 +698,7 @@ slocator_fetch_all (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
       locator_free_copy_area (copy_area);
     }
 
-  if (desc_ptr)
+  if (encode_endian && desc_ptr)
     {
       free_and_init (desc_ptr);
     }
@@ -743,7 +757,7 @@ slocator_does_exist (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
     {
       num_objs =
 	locator_send_copy_area (copy_area, &content_ptr, &content_size,
-				&desc_ptr, &desc_size);
+				&desc_ptr, &desc_size, true);
     }
   else
     {
@@ -817,7 +831,7 @@ slocator_notify_isolation_incons (THREAD_ENTRY * thread_p, unsigned int rid,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, true);
     }
   else
     {
@@ -923,7 +937,7 @@ slocator_force (THREAD_ENTRY * thread_p, unsigned int rid, char *request,
       else
 	{
 	  locator_unpack_copy_area_descriptor (num_objs, copy_area,
-					       packed_desc);
+					       packed_desc, -1);
 	  mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (copy_area);
 	  mobjs->start_multi_update = start_multi_update;
 	  mobjs->end_multi_update = end_multi_update;
@@ -1123,7 +1137,7 @@ slocator_fetch_lockset (THREAD_ENTRY * thread_p, unsigned int rid,
 	{
 	  num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					     &content_size, &desc_ptr,
-					     &desc_size);
+					     &desc_size, true);
 	}
       else
 	{
@@ -1261,7 +1275,7 @@ slocator_fetch_all_reference_lockset (THREAD_ENTRY * thread_p,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, true);
     }
   else
     {
@@ -7585,7 +7599,7 @@ slocator_find_lockhint_class_oids (THREAD_ENTRY * thread_p,
     {
       num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					 &content_size, &desc_ptr,
-					 &desc_size);
+					 &desc_size, true);
     }
   else
     {
@@ -7721,7 +7735,7 @@ slocator_fetch_lockhint_classes (THREAD_ENTRY * thread_p,
 	{
 	  num_objs = locator_send_copy_area (copy_area, &content_ptr,
 					     &content_size, &desc_ptr,
-					     &desc_size);
+					     &desc_size, true);
 	}
       else
 	{

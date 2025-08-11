@@ -1172,6 +1172,14 @@ typedef struct _ha_config
 #define UNLOAD_PASSWORD_L                       "password"
 #define UNLOAD_KEEP_STORAGE_ORDER_S		11918
 #define UNLOAD_KEEP_STORAGE_ORDER_L		"keep-storage-order"
+#define UNLOAD_THREAD_COUNT_S                   't'
+#define UNLOAD_THREAD_COUNT_L                   "thread-count"
+#define UNLOAD_REQUEST_PAGES_S                  11929
+#define UNLOAD_REQUEST_PAGES_L                  "use-request-pages"
+#define UNLOAD_SAMPLING_TEST_S                  11920
+#define UNLOAD_SAMPLING_TEST_L                  "sampling-test"
+#define UNLOAD_ENHANCED_ESTIMATES_S             11921
+#define UNLOAD_ENHANCED_ESTIMATES_L             "enhanced-estimates"
 
 /* compactdb option list */
 #define COMPACT_VERBOSE_S                       'v'

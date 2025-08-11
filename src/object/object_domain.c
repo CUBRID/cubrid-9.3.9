@@ -8264,6 +8264,7 @@ tp_value_cast_internal (const DB_VALUE * src, DB_VALUE * dest,
 	  {
 	    int max_size = 38 + 2 + 1;
 	    char *new_string, *ptr;
+            char str_buf[NUMERIC_MAX_STRING_SIZE];
 
 	    new_string = (char *) db_private_alloc (NULL, max_size);
 	    if (!new_string)
@@ -8271,7 +8272,7 @@ tp_value_cast_internal (const DB_VALUE * src, DB_VALUE * dest,
 		return DOMAIN_ERROR;
 	      }
 
-	    ptr = numeric_db_value_print ((DB_VALUE *) src);
+	    ptr = numeric_db_value_print ((DB_VALUE *) src, str_buf);
 	    strcpy (new_string, ptr);
 
 	    if (db_value_precision (target) != TP_FLOATING_PRECISION_VALUE
