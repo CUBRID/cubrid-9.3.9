@@ -156,7 +156,7 @@ esac
 
 # Checks for libraries.
 AC_CHECK_LIB([m], [main])
-#AC_CHECK_LIB([rt], [main])
+AC_CHECK_LIB([rt], [main])
 AC_CHECK_LIB([dl], [main])
 #AC_CHECK_LIB([elf], [main])
 #AC_CHECK_LIB([iberty], [main])
