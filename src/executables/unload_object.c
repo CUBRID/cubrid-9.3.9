@@ -1722,7 +1722,7 @@ process_class (int cl_no, int nthreads)
 
   if (nthreads > 0)
     {
-      for (i = 0; i < class_ptr->att_count; i++)
+      for (i = 0; (i < class_ptr->att_count) && (nthreads > 0); i++)
 	{
 	  DB_TYPE db_type_in;
 	  DB_TYPE db_type = class_ptr->attributes[i].type->id;
@@ -1730,6 +1730,9 @@ process_class (int cl_no, int nthreads)
 	    {
 	    case DB_TYPE_OID:
 	    case DB_TYPE_OBJECT:
+	    case DB_TYPE_SET:
+	    case DB_TYPE_MULTISET:
+	    case DB_TYPE_SEQUENCE:
 	      fprintf (stderr, "warning: %s%s%s has %s type.\n", PRINT_IDENTIFIER (class_ptr->header.name),
 		       db_get_type_name (db_type));
 	      fprintf (stderr, "So for class %s%s%s, '--thread-count' option is ignored.\n",
@@ -1738,7 +1741,7 @@ process_class (int cl_no, int nthreads)
 	      // Notice: In this case, Do NOT use multi-threading!
 	      nthreads = 0;
 	      break;
-
+#if 0
 	    case DB_TYPE_SET:
 	    case DB_TYPE_MULTISET:
 	    case DB_TYPE_SEQUENCE:
@@ -1754,7 +1757,7 @@ process_class (int cl_no, int nthreads)
 		  nthreads = 0;
 		}
 	      break;
-
+#endif
 	    default:
 	      break;
 	    }
