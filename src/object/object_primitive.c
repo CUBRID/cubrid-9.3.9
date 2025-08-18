@@ -10217,7 +10217,12 @@ mr_readval_string_internal (OR_BUF * buf, DB_VALUE * value,
 	  precision = DB_MAX_VARCHAR_PRECISION;
 	}
 
-      if (!copy)
+      if (size == 0)
+	{
+	  /* its NULL */
+	  db_value_domain_init (value, DB_TYPE_VARCHAR, precision, 0);
+	}
+      else if (!copy)
 	{
 	  str_length = or_get_varchar_length (buf, &rc);
 	  if (rc == NO_ERROR)
@@ -10236,12 +10241,6 @@ mr_readval_string_internal (OR_BUF * buf, DB_VALUE * value,
 	}
       else
 	{
-	  if (size == 0)
-	    {
-	      /* its NULL */
-	      db_value_domain_init (value, DB_TYPE_VARCHAR, precision, 0);
-	    }
-	  else
 	    {			/* size != 0 */
 	      if (size == -1)
 		{
@@ -12869,7 +12868,12 @@ mr_readval_varnchar_internal (OR_BUF * buf, DB_VALUE * value,
 	}
 
       /* Branch according to convention based on size */
-      if (!copy)
+      if (size == 0)
+	{
+	  /* its NULL */
+	  db_value_domain_init (value, DB_TYPE_VARNCHAR, precision, 0);
+	}
+      else if (!copy)
 	{
 	  str_length = or_get_varchar_length (buf, &rc);
 	  if (TP_DOMAIN_COLLATION_FLAG (domain) != TP_DOMAIN_COLL_NORMAL)
@@ -12885,12 +12889,6 @@ mr_readval_varnchar_internal (OR_BUF * buf, DB_VALUE * value,
 	}
       else
 	{
-	  if (size == 0)
-	    {
-	      /* its NULL */
-	      db_value_domain_init (value, DB_TYPE_VARNCHAR, precision, 0);
-	    }
-	  else
 	    {			/* size != 0 */
 	      if (size == -1)
 		{
@@ -14405,12 +14403,6 @@ mr_readval_varbit_internal (OR_BUF * buf, DB_VALUE * value,
 	}
       else
 	{
-	  if (size == 0)
-	    {
-	      /* its NULL */
-	      db_value_domain_init (value, DB_TYPE_VARBIT, precision, 0);
-	    }
-	  else
 	    {			/* size != 0 */
 	      if (size == -1)
 		{
