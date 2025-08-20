@@ -1040,7 +1040,8 @@ extractobjects (const char *exec_name, int nthreads, int sampling_records, bool 
   for (i = 0; i < class_table->num; i++)
     {
       if (WS_MARKED_DELETED (class_table->mops[i]) ||
-	  class_table->mops[i] == sm_Root_class_mop)
+	  class_table->mops[i] == sm_Root_class_mop ||
+          db_is_vclass (class_table->mops[i]))
 	{
 	  continue;
 	}
