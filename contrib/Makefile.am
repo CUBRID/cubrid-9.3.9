@@ -31,7 +31,8 @@ dist_scripts_SCRIPTS = \
 	scripts/check_reserved.sql \
 	scripts/broker_log_top.py \
 	scripts/brokerstatus_to_csv.py \
-	scripts/statdump_to_csv.py
+	scripts/statdump_to_csv.py \
+	scripts/unloaddb.sh
 
 hascriptsdir = ${datadir}/scripts/ha
 dist_hascripts_SCRIPTS = \
