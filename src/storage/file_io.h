@@ -386,6 +386,15 @@ struct flush_stats
   unsigned int num_tokens;
 };
 
+typedef struct fileio_unlinked_volinfo FILEIO_UNLINKED_VOLINFO;
+struct fileio_unlinked_volinfo
+{
+  FILEIO_UNLINKED_VOLINFO *next;
+  int volid;
+  char volname[4096];
+  char prev_volname[4096];
+};
+
 extern int fileio_open (const char *vlabel, int flags, int mode);
 extern void fileio_close (int vdes);
 extern int fileio_format (THREAD_ENTRY * thread_p, const char *db_fullname,
@@ -564,7 +573,7 @@ extern int fileio_restore_volume (THREAD_ENTRY * thread_p,
 				  char *to_vlabel, char *verbose_to_vlabel,
 				  char *prev_vlabel,
 				  FILEIO_RESTORE_PAGE_CACHE * pages_cache,
-				  bool remember_pages);
+				  bool remember_pages, bool * is_prev_vheader_restored, FILEIO_UNLINKED_VOLINFO ** unlinked_volinfo);
 extern int fileio_skip_restore_volume (THREAD_ENTRY * thread_p,
 				       FILEIO_BACKUP_SESSION * session);
 extern const char *fileio_get_zip_method_string (FILEIO_ZIP_METHOD

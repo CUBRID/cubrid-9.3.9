@@ -10629,13 +10629,103 @@ exit_on_error:
 }
 
 #if !defined(CS_MODE)
+void fileio_del_unlinked_volinfo (FILEIO_UNLINKED_VOLINFO ** unlinked_volinfo, int volid)
+{
+  FILEIO_UNLINKED_VOLINFO * volinfo = NULL;
+  FILEIO_UNLINKED_VOLINFO * prev_volinfo = NULL;
+
+  volinfo = *unlinked_volinfo;
+
+  if (volinfo == NULL)
+    {
+      return;
+    }
+
+  while (volinfo != NULL)
+    {
+      if (volinfo->volid == volid)
+        {
+          if (prev_volinfo == NULL)
+            {
+              *unlinked_volinfo = volinfo->next;
+            }
+          else
+            {
+              prev_volinfo->next = volinfo->next;
+            }
+
+          free (volinfo);
+
+          break;
+        }
+
+        prev_volinfo = volinfo;
+        volinfo = volinfo->next;
+    }
+}
+
+void fileio_add_unlinked_volinfo (FILEIO_UNLINKED_VOLINFO ** unlinked_volinfo, int volid, char * volname, char * prev_volname)
+{
+  FILEIO_UNLINKED_VOLINFO * volinfo = NULL;
+  FILEIO_UNLINKED_VOLINFO * prev_volinfo = NULL;
+
+  if (volid < 0 || volname == NULL || prev_volname == NULL)
+    {
+      return;
+    }
+
+  volinfo = *unlinked_volinfo;
+
+  if (volinfo == NULL)
+    {
+      volinfo = (FILEIO_UNLINKED_VOLINFO *) malloc (sizeof (FILEIO_UNLINKED_VOLINFO));
+      if (volinfo == NULL)
+        {
+          return;
+        }
+
+      volinfo->next = NULL;
+      volinfo->volid = volid;
+      snprintf (volinfo->volname, 4096, volname);
+      snprintf (volinfo->prev_volname, 4096, prev_volname);
+
+      *unlinked_volinfo = volinfo;
+
+      return;
+    }
+
+  while (volinfo != NULL)
+    {
+      if (volinfo->volid == volid)
+        {
+          return;
+        }
+
+        prev_volinfo = volinfo;
+        volinfo = volinfo->next;
+    }
+
+  volinfo = (FILEIO_UNLINKED_VOLINFO *) malloc (sizeof (FILEIO_UNLINKED_VOLINFO));
+  if (volinfo == NULL)
+    {
+      return;
+    }
+
+  volinfo->next = NULL;
+  volinfo->volid = volid;
+  snprintf (volinfo->volname, 4096, volname);
+  snprintf (volinfo->prev_volname, 4096, prev_volname);
+
+  prev_volinfo->next = volinfo;
+}
+
 /*
  * fileio_restore_volume () - Restore a volume/file of given database
  *   return:
  *   session_p(in/out):  The session array
  *   to_vlabel_p(in): Restore the next file using this name
  *   verbose_to_vlabel_p(in): Printable volume name
- *   prev_vlabel_p(in): Previous restored file name
+ *   prev_vlabel_p(out): Previous restored file name
  *   pages_cache_p(in): Page and volume cache to record which pages have
  *                    already been restored
  *   is_remember_pages(in): true if we need to track which pages are restored
@@ -10647,7 +10737,7 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
 		       char *verbose_to_vol_label_p,
 		       char *prev_vol_label_p,
 		       FILEIO_RESTORE_PAGE_CACHE * pages_cache_p,
-		       bool is_remember_pages)
+		       bool is_remember_pages, bool * is_prev_vol_header_restored, FILEIO_UNLINKED_VOLINFO ** unlinked_volinfo)
 {
   int next_page_id = 0;
   INT64 total_nbytes = 0;
@@ -10659,6 +10749,7 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
   int unit;
   int i;
   char *buffer_p;
+  bool incremental_includes_volume_header = false;
 
   npages = (int) CEIL_PTVDIV (session_p->dbfile.nbytes, IO_PAGESIZE);
   session_p->dbfile.vlabel = to_vol_label_p;
@@ -10796,7 +10887,13 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
 
       /* Restore the page we just read in */
       if (session_p->dbfile.level != FILEIO_BACKUP_FULL_LEVEL)
-	next_page_id = FILEIO_GET_BACKUP_PAGE_ID (session_p->dbfile.area);
+	{
+	  next_page_id = FILEIO_GET_BACKUP_PAGE_ID (session_p->dbfile.area);
+	  if (next_page_id == DISK_VOLHEADER_PAGE)
+	    {
+	      incremental_includes_volume_header = true;
+	    }
+	}
 
       buffer_p = (char *) &session_p->dbfile.area->iopage;
       for (i = 0; i < unit && next_page_id < npages; i++)
@@ -10843,6 +10940,11 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
   if (session_p->bkup.loc_db_fullname[0] != '\0'
       && session_p->dbfile.volid >= LOG_DBFIRST_VOLID)
     {
+      /* Volume header page may not be included in incremental backup volumes.
+       * This means that volume header of a partially restoredb volume may not exist.
+       */
+      if (session_p->dbfile.level == FILEIO_BACKUP_FULL_LEVEL || incremental_includes_volume_header == true)
+        {
       VOLID volid;
 
       volid = session_p->dbfile.volid;
@@ -10854,7 +10956,7 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
 	  goto error;
 	}
 
-      if (volid != LOG_DBFIRST_VOLID)
+      if (volid != LOG_DBFIRST_VOLID && *is_prev_vol_header_restored)
 	{
 	  VOLID prev_volid;
 	  int prev_vdes;
@@ -10876,7 +10978,30 @@ fileio_restore_volume (THREAD_ENTRY * thread_p,
 	    }
 
 	  fileio_dismount (thread_p, prev_vdes);
+
+	  if (*unlinked_volinfo != NULL)
+	    {
+	      // The volume headers of both previous and current volumes are in the full or big incremental backup volumes.
+	      // Therefore, the link between the two volumes is naturally established during the restoration process.
+	      //  So, there is no need to explicitly set it.
+              fileio_del_unlinked_volinfo (unlinked_volinfo, volid);
+	    }
+        }
+
+      if (incremental_includes_volume_header == true)
+	{
+	  if (volid != LOG_DBFIRST_VOLID && *is_prev_vol_header_restored == false)
+	    {
+              fileio_add_unlinked_volinfo (unlinked_volinfo, volid, to_vol_label_p, prev_vol_label_p);
+	    }
 	}
+
+      *is_prev_vol_header_restored = true;
+        }
+      else
+        {
+      *is_prev_vol_header_restored = false;
+        }
 
       /* save current volname */
       strncpy (prev_vol_label_p, to_vol_label_p, PATH_MAX);
