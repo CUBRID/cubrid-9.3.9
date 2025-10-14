@@ -10222,6 +10222,9 @@ logpb_restore (THREAD_ENTRY * thread_p, const char *db_fullname,
   REL_COMPATIBILITY compat;
   int dummy;
 
+  bool is_prev_volheader_restored = false;
+  FILEIO_UNLINKED_VOLINFO * unlinked_volinfo = NULL;
+
   try_level = (FILEIO_BACKUP_LEVEL) r_args->level;
   start_level = try_level;
   memset (&session_storage, 0, sizeof (FILEIO_BACKUP_SESSION));
@@ -10513,6 +10516,7 @@ logpb_restore (THREAD_ENTRY * thread_p, const char *db_fullname,
 		case LOG_DBVOLINFO_VOLID:
 		case LOG_DBLOG_ARCHIVE_VOLID:
 
+		  is_prev_volheader_restored = false;
 
 		  /* We can only take the most recent information, and we
 		   * do not want to overwrite it with out of data information
@@ -10554,7 +10558,7 @@ logpb_restore (THREAD_ENTRY * thread_p, const char *db_fullname,
 	      success = fileio_restore_volume (thread_p, session,
 					       to_volname, verbose_to_volname,
 					       prev_volname, &pages_cache,
-					       remember_pages);
+					       remember_pages, &is_prev_volheader_restored, &unlinked_volinfo);
 	    }
 	  else if (another_vol == 0)
 	    {
@@ -10598,6 +10602,40 @@ logpb_restore (THREAD_ENTRY * thread_p, const char *db_fullname,
 	}
 
       try_level = (FILEIO_BACKUP_LEVEL) (try_level - 1);
+    }
+
+  // Incremental backup volumes often do not include volume header pages.
+  // Accordingly, it is necessary to set unlinked volumes after all volume header pages are restored.
+  while (unlinked_volinfo != NULL)
+    {
+      VOLID prev_volid, volid;
+      int prev_vdes;
+      const char *prev_volname, *volname;
+      FILEIO_UNLINKED_VOLINFO * volinfo;
+
+      volinfo = unlinked_volinfo;
+      unlinked_volinfo = volinfo->next;
+
+      volid = volinfo->volid;
+      volname = volinfo->volname;
+      prev_volname = volinfo->prev_volname;
+
+      prev_volid = volid - 1;
+      prev_vdes = fileio_mount (thread_p, NULL, prev_volname, prev_volid, false, false);
+      if (prev_vdes == NULL_VOLDES)
+	{
+	  goto error;
+	}
+
+      if (disk_set_link (thread_p, prev_volid, volname, false, DISK_FLUSH_AND_INVALIDATE) != NO_ERROR)
+	{
+	  fileio_dismount (thread_p, prev_vdes);
+	  goto error;
+	}
+
+      fileio_dismount (thread_p, prev_vdes);
+
+      free (volinfo);
     }
 
   /* make bkvinf file */
