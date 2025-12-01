@@ -524,6 +524,9 @@ unload_writer_thread (void *param)
   return (THREAD_RET_T) thr_ret;
 }
 
+int64_t g_dbg_skip_pages = 0;
+int64_t g_dbg_pages = 0;
+
 int
 unload_fetcher ()
 {
@@ -551,13 +554,18 @@ unload_fetcher ()
       TIMER_BEGIN ((g_sampling_records >= 0), &(g_uci->wi_fetch));
       error = locator_fetch_all (hfid, &lock, class_oid, &nobjects, &nfetched, &last_oid, &fetch_area, g_request_pages);
       TIMER_END ((g_sampling_records >= 0), &(g_uci->wi_fetch));
+      g_dbg_pages++;
       if (error == NO_ERROR)
 	{
 	  if (fetch_area != NULL)
 	    {
 	      if (!g_multi_thread_mode)
 		{
-		  error = unload_printer (fetch_area, desc_obj, obj_out);
+                  if(g_dbg_skip_pages <= 0 || g_dbg_skip_pages <= g_dbg_pages) // ctshim      
+                    {
+		      error = unload_printer (fetch_area, desc_obj, obj_out);
+                    }
+
 		  locator_free_copy_area (fetch_area);
 		  if (error != NO_ERROR)
 		    {
@@ -605,6 +613,7 @@ unload_fetcher ()
   if (error != NO_ERROR)
     {
       error_occurred = true;
+      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>g_dbg_pages=%" PRId64 "\n", g_dbg_pages); // ctshim
     }
 
   return error;

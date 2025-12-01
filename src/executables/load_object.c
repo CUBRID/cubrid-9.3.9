@@ -731,6 +731,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	  vars = (int *) malloc (sizeof (int) * oldrep->variable_count);
 	  if (vars == NULL)
 	    {
+              er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
 	      goto abort_on_error;
 	    }
 	}
@@ -749,6 +750,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
   attmap = (SM_ATTRIBUTE **) malloc (sizeof (SM_ATTRIBUTE *) * total);
   if (attmap == NULL)
     {
+      er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
       goto abort_on_error;
     }
 
@@ -767,6 +769,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
       type = PR_TYPE_FROM_ID (rat->typeid_);
       if (type == NULL)
 	{
+          er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim 
 	  goto abort_on_error;
 	}
 
@@ -827,6 +830,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
       type = PR_TYPE_FROM_ID (rat->typeid_);
       if (type == NULL)
 	{
+          er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
 	  goto abort_on_error;
 	}
 
@@ -922,6 +926,7 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
   int i;
   int rc = NO_ERROR;
   int offset_size;
+  volatile  int dbg_flag = 0;
 
   if (obj == NULL)
     {
@@ -951,9 +956,12 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
     {
       /* offset size */
       offset_size = OR_GET_OFFSET_SIZE (buf->ptr);
+      dbg_flag = 1;
 
       repid_bits = or_get_int (buf, &rc);
+      dbg_flag = 2;
       (void) or_get_int (buf, &rc);	/* skip chn */
+      dbg_flag = 3;
 
       /* mask out the repid & bound bit flag & offset size flag */
       repid = repid_bits & ~OR_BOUND_BIT_FLAG & ~OR_OFFSET_SIZE_FLAG;
@@ -961,17 +969,23 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
 
       if (repid == class_->repid)
 	{
+          dbg_flag = 4;      
 	  get_desc_current (buf, class_, obj, bound_bit_flag, offset_size,
 			    is_unloaddb);
+          dbg_flag = 5;                  
 	}
       else
 	{
+          dbg_flag = 6;      
 	  get_desc_old (buf, class_, repid, obj, bound_bit_flag, offset_size,
 			is_unloaddb);
+          dbg_flag = 7;                        
 	}
     }
   else
     {
+      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>dbg_flag=%d \n", dbg_flag); // ctshim        
+
       error = ER_TF_BUFFER_UNDERFLOW;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error, 0);
     }
