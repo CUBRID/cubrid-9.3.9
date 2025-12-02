@@ -1063,8 +1063,8 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
   else
     {
       fprintf(stdout, "\nDBG::>>>>>>>>>>>>>dbg_flag=%d , g_dbg_hit_position=%d \n", dbg_flag, g_dbg_hit_position); // ctshim     
-      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>dbg_key old [%s] [%d] [%s] \n", g_dbg_buf_key_s_old[0], g_dbg_buf_key_i_old, g_dbg_buf_key_s_old[1]); 
-      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>dbg_key new [%s] [%d] [%s] \n", g_dbg_buf_key_s_new[0], g_dbg_buf_key_i_new, g_dbg_buf_key_s_new[1]); 
+      fprintf(stdout, "DBG::>>>>>>>>>>>>>dbg_key old [%s] [%d] [%s] \n", g_dbg_buf_key_s_old[0], g_dbg_buf_key_i_old, g_dbg_buf_key_s_old[1]); 
+      fprintf(stdout, "DBG::>>>>>>>>>>>>>dbg_key new [%s] [%d] [%s] \n", g_dbg_buf_key_s_new[0], g_dbg_buf_key_i_new, g_dbg_buf_key_s_new[1]); 
       
       error = ER_TF_BUFFER_UNDERFLOW;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error, 0);
