@@ -935,11 +935,11 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
         {
            g_dbg_buf_key_i_new = db_get_int(&obj->values[i]);
         } 
-        else if(strcmp(rat->header.name, "docid") == 0)
+        else if(strcmp(att->header.name, "docid") == 0)
           {
             strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[i]));
           }                                        
-        else if(strcmp(rat->header.name, "fleid") == 0)
+        else if(strcmp(att->header.name, "fleid") == 0)
           {
             strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[i]));
           }  
