@@ -81,8 +81,8 @@ static void default_clear_err_filter (void);
 //ctshim
 volatile char g_dbg_buf_key_s_old[2][160] = { 0x00, };
 volatile char g_dbg_buf_key_s_new[2][160] = { 0x00, };
-volatile char g_dbg_buf_key_i_old = -999;
-volatile char g_dbg_buf_key_i_new = -999;
+volatile int g_dbg_buf_key_i_old = -999;
+volatile int g_dbg_buf_key_i_new = -999;
 volatile int  g_dbg_hit_position = 0;
 
 /*
@@ -635,7 +635,7 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 	}
 
         // ctshim
-        if(strcasecmp(att[i].header.name, "pathorder") = 0)
+        if(strcmp(att->header.name, "pathorder") == 0)
         {
            g_dbg_buf_key_i_new = db_get_int(&obj->values[i]);
         }
@@ -670,11 +670,11 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 					vars[j], do_copy, NULL, 0);
 
           // ctshim
-          if(strcasecmp(att[i].header.name, "docid") = 0)
+          if(strcmp(att->header.name, "docid") == 0)
             {
                strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[i]));
             }                                        
-          else if(strcasecmp(att[i].header.name, "fleid") = 0)
+          else if(strcmp(att->header.name, "fleid") == 0)
             {
                strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[i]));
             }  
@@ -831,13 +831,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	  (*(type->data_readval)) (buf,
 				   &obj->values[attmap[i]->storage_order],
 				   rat->domain, -1, do_copy, NULL, 0);
-	}
-
- // ctshim
-        if(strcasecmp(rat->header.name, "pathorder") = 0)
-        {
-           g_dbg_buf_key_i_new = db_get_int(&obj->values[attmap[i]->storage_order]);
-        }        
+	}      
     }
 
   g_dbg_hit_position = 200600;    
@@ -907,17 +901,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 				   &obj->values[attmap
 						[att_index]->storage_order],
 				   rat->domain, vars[i], do_copy, NULL, 0);
-	}
-
-        // ctshim
-        if(strcasecmp(rat->header.name, "docid") = 0)
-          {
-            strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[attmap[att_index]->storage_order]));
-          }                                        
-        else if(strcasecmp(rat->header.name, "fleid") = 0)
-          {
-            strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[attmap[att_index]->storage_order]));
-          }          
+	}        
     }
 
   /*
@@ -946,6 +930,19 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	      pr_clone_value (&att->default_value.original_value,
 			      &obj->values[i]);
 	}
+                                       // ctshim
+        if(strcmp(att->header.name, "pathorder") == 0)
+        {
+           g_dbg_buf_key_i_new = db_get_int(&obj->values[i]);
+        } 
+        else if(strcmp(rat->header.name, "docid") == 0)
+          {
+            strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[i]));
+          }                                        
+        else if(strcmp(rat->header.name, "fleid") == 0)
+          {
+            strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[i]));
+          }  
     }
 
   if (attmap != NULL)
