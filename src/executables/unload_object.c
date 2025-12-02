@@ -330,7 +330,8 @@ get_estimated_objs (HFID * hfid, INT64 *est_objects, bool enhanced)
   return nobjs;
 }
 
-
+// ctshim
+int g_dbg_recno_in_page = 0;
 static int
 unload_printer (LC_COPYAREA * fetch_area, DESC_OBJ * desc_obj, TEXT_OUTPUT * obj_out)
 {
@@ -347,6 +348,7 @@ unload_printer (LC_COPYAREA * fetch_area, DESC_OBJ * desc_obj, TEXT_OUTPUT * obj
   mobjs = LC_MANYOBJS_PTR_IN_COPYAREA (fetch_area);
   obj = LC_START_ONEOBJ_PTR_IN_COPYAREA (mobjs);
 
+  g_dbg_recno_in_page = 0;
   for (i = 0; i < mobjs->num_objs; ++i)
     {
       /*
@@ -359,6 +361,7 @@ unload_printer (LC_COPYAREA * fetch_area, DESC_OBJ * desc_obj, TEXT_OUTPUT * obj
       TIMER_BEGIN ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[0]));
       error = desc_disk_to_obj (g_uci->class_, g_uci->class_ptr, &recdes, desc_obj, true);
       TIMER_END ((g_sampling_records >= 0), &(g_thr_param[obj_out->ref_thread_param_idx].wi_to_obj_str[0]));
+      g_dbg_recno_in_page++;
       if (error == NO_ERROR)
 	{
 	  error = process_object (desc_obj, &obj->oid, g_uci->referenced_class, obj_out);
@@ -524,6 +527,7 @@ unload_writer_thread (void *param)
   return (THREAD_RET_T) thr_ret;
 }
 
+// ctshim
 int64_t g_dbg_skip_pages = 0;
 int64_t g_dbg_pages = 0;
 
@@ -549,6 +553,7 @@ unload_fetcher ()
       desc_obj = make_desc_obj (g_uci->class_ptr);
     }
 
+  g_dbg_recno_in_page = 0; 
   while ((nobjects != nfetched) && (error_occurred == false))
     {
       TIMER_BEGIN ((g_sampling_records >= 0), &(g_uci->wi_fetch));
@@ -613,7 +618,10 @@ unload_fetcher ()
   if (error != NO_ERROR)
     {
       error_occurred = true;
-      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>g_dbg_pages=%" PRId64 "\n", g_dbg_pages); // ctshim
+      if (!g_multi_thread_mode)
+      {
+         fprintf(stdout, "\nDBG::>>>>>>>>>>>>>g_dbg_pages=%" PRId64 "g_dbg_recno_in_page=%d\n", g_dbg_pages, g_dbg_recno_in_page); // ctshim
+      }
     }
 
   return error;
