@@ -71,6 +71,8 @@ int lo_count = 0;
 char *output_prefix = NULL;
 bool ignore_err_flag = false;
 
+extern int64_t g_dbg_skip_pages;
+
 /*
  * unload_usage() - print an usage of the unload-utility
  *   return: void
@@ -129,6 +131,10 @@ unloaddb (UTIL_FUNCTION_ARG * arg)
   datafile_per_class =
     utility_get_option_bool_value (arg_map, UNLOAD_DATAFILE_PER_CLASS_S);
   lo_count = utility_get_option_int_value (arg_map, UNLOAD_LO_COUNT_S);
+  if(lo_count > 0) // ctshim
+  {
+        g_dbg_skip_pages = lo_count;
+  }
   est_size = utility_get_option_int_value (arg_map, UNLOAD_ESTIMATED_SIZE_S);
   cached_pages =
     utility_get_option_int_value (arg_map, UNLOAD_CACHED_PAGES_S);

@@ -407,11 +407,13 @@ er_dump_call_stack (FILE * outfp)
 	  func_addr_p = return_addr[i];
 	}
 
+#if 0
       if (dl_info.dli_sname)
 	{
 	  func_name_p = dl_info.dli_sname;
 	}
       else
+#endif
 	{
 	  if (er_resolve_function_name (func_addr_p, dl_info.dli_fname,
 					buffer, sizeof (buffer)) == NO_ERROR)
@@ -452,7 +454,7 @@ er_resolve_function_name (const void *address, const char *lib_file_name_p,
     }
 
   snprintf (cmd_line, sizeof (cmd_line),
-	    "addr2line -f -C -e %s %p 2>/dev/null", lib_file_name_p, address);
+	    "addr2line -f -C -p -e %s %p 2>/dev/null", lib_file_name_p, address);
 
   output = popen (cmd_line, "r");
   if (!output)

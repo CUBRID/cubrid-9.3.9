@@ -78,6 +78,12 @@ static void get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 static void init_load_err_filter (void);
 static void default_clear_err_filter (void);
 
+//ctshim
+volatile char g_dbg_buf_key_s_old[2][160] = { 0x00, };
+volatile char g_dbg_buf_key_s_new[2][160] = { 0x00, };
+volatile int g_dbg_buf_key_i_old = -999;
+volatile int g_dbg_buf_key_i_new = -999;
+volatile int  g_dbg_hit_position = 0;
 
 /*
  * make_desc_obj - Makes an object descriptor for a particular class.
@@ -582,16 +588,20 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 	  vars = (int *) malloc (sizeof (int) * class_->variable_count);
 	  if (vars == NULL)
 	    {
+              g_dbg_hit_position = 100001;  
 	      return;
 	    }
 	}
       offset = or_get_offset_internal (buf, &rc, offset_size);
+      g_dbg_hit_position = 100100;  
       for (i = 0; i < class_->variable_count; i++)
 	{
+          g_dbg_hit_position++;
 	  offset2 = or_get_offset_internal (buf, &rc, offset_size);
 	  vars[i] = offset2 - offset;
 	  offset = offset2;
 	}
+      g_dbg_hit_position = 100200;  
       buf->ptr = PTR_ALIGN (buf->ptr, INT_ALIGNMENT);
     }
 
@@ -605,10 +615,12 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 
   att = class_->attributes;
   start = buf->ptr;
+  g_dbg_hit_position = 100300;  
   for (i = 0; i < class_->fixed_count;
        i++, att = (SM_ATTRIBUTE *) att->header.next)
     {
 
+      g_dbg_hit_position++;  
       if (bits != NULL && !OR_GET_BOUND_BIT (bits, i))
 	{
 	  /* its a NULL value, skip it */
@@ -621,30 +633,51 @@ get_desc_current (OR_BUF * buf, SM_CLASS * class_, DESC_OBJ * obj,
 	  (*(att->type->data_readval)) (buf, &obj->values[i], att->domain, -1,
 					do_copy, NULL, 0);
 	}
+
+        // ctshim
+        if(strcmp(att->header.name, "pathorder") == 0)
+        {
+           g_dbg_buf_key_i_new = db_get_int(&obj->values[i]);
+        }
     }
 
   /* round up to a to the end of the fixed block */
+  g_dbg_hit_position = 100400;
   pad = (int) (buf->ptr - start);
   if (pad < obj->class_->fixed_size)
     {
+      g_dbg_hit_position++;  
       or_advance (buf, obj->class_->fixed_size - pad);
     }
 
   /* skip over the bound bits */
   if (bound_bit_flag)
     {
+      g_dbg_hit_position = 100500;  
       or_advance (buf, OR_BOUND_BIT_BYTES (obj->class_->fixed_count));
     }
 
   /* variable */
+  g_dbg_hit_position = 100600;  
   if (vars != NULL)
     {
       for (i = class_->fixed_count, j = 0;
 	   i < class_->att_count && j < class_->variable_count;
 	   i++, j++, att = (SM_ATTRIBUTE *) att->header.next)
 	{
+          g_dbg_hit_position++;      
 	  (*(att->type->data_readval)) (buf, &obj->values[i], att->domain,
 					vars[j], do_copy, NULL, 0);
+
+          // ctshim
+          if(strcmp(att->header.name, "docid") == 0)
+            {
+               strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[i]));
+            }                                        
+          else if(strcmp(att->header.name, "fleid") == 0)
+            {
+               strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[i]));
+            }  
 	}
 
       if (vars != zvar)
@@ -714,6 +747,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 
   if (oldrep == NULL)
     {
+      g_dbg_hit_position = 200001;    
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_TF_INVALID_REPRESENTATION,
 	      1, class_->header.name);
       return;
@@ -728,19 +762,24 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	}
       else
 	{
+          g_dbg_hit_position = 200002;          
 	  vars = (int *) malloc (sizeof (int) * oldrep->variable_count);
 	  if (vars == NULL)
 	    {
+              er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
 	      goto abort_on_error;
 	    }
 	}
+      g_dbg_hit_position = 200100;    
       offset = or_get_offset_internal (buf, &rc, offset_size);
       for (i = 0; i < oldrep->variable_count; i++)
 	{
+          g_dbg_hit_position++;      
 	  offset2 = or_get_offset_internal (buf, &rc, offset_size);
 	  vars[i] = offset2 - offset;
 	  offset = offset2;
 	}
+      g_dbg_hit_position = 200200;      
       buf->ptr = PTR_ALIGN (buf->ptr, INT_ALIGNMENT);
     }
 
@@ -749,27 +788,37 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
   attmap = (SM_ATTRIBUTE **) malloc (sizeof (SM_ATTRIBUTE *) * total);
   if (attmap == NULL)
     {
+      g_dbg_hit_position = 200300;      
+      er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
       goto abort_on_error;
     }
 
   memset (attmap, 0, sizeof (SM_ATTRIBUTE *) * total);
 
+  g_dbg_hit_position = 200400;      
   for (rat = oldrep->attributes, i = 0; rat != NULL; rat = rat->next, i++)
+  {
+    g_dbg_hit_position++;    
     attmap[i] = find_current_attribute (class_, rat->attid);
+  }
 
   rat = oldrep->attributes;
+  g_dbg_hit_position = 200500;  
 
   /* fixed */
   start = buf->ptr;
       for (i = 0; i < oldrep->fixed_count && rat != NULL;
 	   i++, rat = rat->next)
     {
+      g_dbg_hit_position++;  
       type = PR_TYPE_FROM_ID (rat->typeid_);
       if (type == NULL)
 	{
+          er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim 
 	  goto abort_on_error;
 	}
 
+      g_dbg_hit_position++;   
       if (attmap[i] == NULL)
 	{
 	  /* its gone, skip over it */
@@ -782,9 +831,10 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	  (*(type->data_readval)) (buf,
 				   &obj->values[attmap[i]->storage_order],
 				   rat->domain, -1, do_copy, NULL, 0);
-	}
+	}      
     }
 
+  g_dbg_hit_position = 200600;    
   fixed_size = (int) (buf->ptr - start);
   padded_size = DB_ATT_ALIGN (fixed_size);
   or_advance (buf, (padded_size - fixed_size));
@@ -796,6 +846,7 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
    * but we don't have the fixed size of the old representation so we
    * can't easily sneak the buffer pointer forward, work on this someday
    */
+  g_dbg_hit_position = 200700;   
   if (bound_bit_flag && oldrep->fixed_count)
     {
       bits = buf->ptr;
@@ -806,8 +857,10 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	}
 
       rat = oldrep->attributes;
+      g_dbg_hit_position = 200800;  
       for (i = 0; i < oldrep->fixed_count && rat != NULL; i++, rat = rat->next)
 	{
+          g_dbg_hit_position++;      
 	  if (attmap[i] != NULL)
 	    {
 	      if (!OR_GET_BOUND_BIT (bits, i))
@@ -822,14 +875,18 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
     }
 
   /* variable */
+  g_dbg_hit_position = 200900;  
   for (i = 0; i < oldrep->variable_count && rat != NULL; i++, rat = rat->next)
     {
+      g_dbg_hit_position++;  
       type = PR_TYPE_FROM_ID (rat->typeid_);
       if (type == NULL)
 	{
+          er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
 	  goto abort_on_error;
 	}
 
+      g_dbg_hit_position++;  
       att_index = i + oldrep->fixed_count;
       if (attmap[att_index] == NULL)
 	{
@@ -844,15 +901,17 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 				   &obj->values[attmap
 						[att_index]->storage_order],
 				   rat->domain, vars[i], do_copy, NULL, 0);
-	}
+	}        
     }
 
   /*
    * initialize new values
    */
+  g_dbg_hit_position = 300100;   
   for (i = 0, att = class_->attributes; att != NULL;
        i++, att = (SM_ATTRIBUTE *) att->header.next)
     {
+      g_dbg_hit_position++;  
       found = NULL;
       for (rat = oldrep->attributes;
 	   rat != NULL && found == NULL; rat = rat->next)
@@ -871,6 +930,19 @@ get_desc_old (OR_BUF * buf, SM_CLASS * class_, int repid,
 	      pr_clone_value (&att->default_value.original_value,
 			      &obj->values[i]);
 	}
+                                       // ctshim
+        if(strcmp(att->header.name, "pathorder") == 0)
+        {
+           g_dbg_buf_key_i_new = db_get_int(&obj->values[i]);
+        } 
+        else if(strcmp(att->header.name, "docid") == 0)
+          {
+            strcpy(g_dbg_buf_key_s_new[0], db_get_string(&obj->values[i]));
+          }                                        
+        else if(strcmp(att->header.name, "fleid") == 0)
+          {
+            strcpy(g_dbg_buf_key_s_new[1], db_get_string(&obj->values[i]));
+          }  
     }
 
   if (attmap != NULL)
@@ -922,6 +994,7 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
   int i;
   int rc = NO_ERROR;
   int offset_size;
+  volatile  int dbg_flag = 0;
 
   if (obj == NULL)
     {
@@ -946,14 +1019,23 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
 
   obj->classop = classop;
 
+  memset(g_dbg_buf_key_s_old, 0x00, sizeof(g_dbg_buf_key_s_old));
+  memset(g_dbg_buf_key_s_new, 0x00, sizeof(g_dbg_buf_key_s_new));
+  g_dbg_buf_key_i_old = -999;
+  g_dbg_buf_key_i_new = -999;
+  g_dbg_hit_position = 0;  
+
   status = setjmp (buf->env);
   if (status == 0)
     {
       /* offset size */
       offset_size = OR_GET_OFFSET_SIZE (buf->ptr);
+      dbg_flag = 1;
 
       repid_bits = or_get_int (buf, &rc);
+      dbg_flag = 2;
       (void) or_get_int (buf, &rc);	/* skip chn */
+      dbg_flag = 3;
 
       /* mask out the repid & bound bit flag & offset size flag */
       repid = repid_bits & ~OR_BOUND_BIT_FLAG & ~OR_OFFSET_SIZE_FLAG;
@@ -961,17 +1043,29 @@ desc_disk_to_obj (MOP classop, SM_CLASS * class_, RECDES * record,
 
       if (repid == class_->repid)
 	{
+          dbg_flag = 4;      
 	  get_desc_current (buf, class_, obj, bound_bit_flag, offset_size,
 			    is_unloaddb);
+          dbg_flag = 5;                  
 	}
       else
 	{
+          dbg_flag = 6;      
 	  get_desc_old (buf, class_, repid, obj, bound_bit_flag, offset_size,
 			is_unloaddb);
+          dbg_flag = 7;                        
 	}
+    
+        g_dbg_buf_key_i_old = g_dbg_buf_key_i_new;
+        g_dbg_buf_key_i_new = -999;
+        memcpy(g_dbg_buf_key_s_old, g_dbg_buf_key_s_new, sizeof(g_dbg_buf_key_s_new));
     }
   else
     {
+      fprintf(stdout, "\nDBG::>>>>>>>>>>>>>dbg_flag=%d , g_dbg_hit_position=%d \n", dbg_flag, g_dbg_hit_position); // ctshim     
+      fprintf(stdout, "DBG::>>>>>>>>>>>>>dbg_key old [%s] [%d] [%s] \n", g_dbg_buf_key_s_old[0], g_dbg_buf_key_i_old, g_dbg_buf_key_s_old[1]); 
+      fprintf(stdout, "DBG::>>>>>>>>>>>>>dbg_key new [%s] [%d] [%s] \n", g_dbg_buf_key_s_new[0], g_dbg_buf_key_i_new, g_dbg_buf_key_s_new[1]); 
+      
       error = ER_TF_BUFFER_UNDERFLOW;
       er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, error, 0);
     }

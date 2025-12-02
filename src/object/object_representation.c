@@ -502,6 +502,7 @@ or_overflow (OR_BUF * buf)
    * main transformer functions will need to test the status value
    * for ER_TF_BUFFER_OVERFLOW and know that this isn't an error condition.
    */
+  er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_TF_BUFFER_OVERFLOW, 0); // ctshim
 
   if (buf->error_abort)
     {
@@ -524,7 +525,7 @@ or_overflow (OR_BUF * buf)
 int
 or_underflow (OR_BUF * buf)
 {
-  er_set (ER_ERROR_SEVERITY, ARG_FILE_LINE, ER_TF_BUFFER_UNDERFLOW, 0);
+  er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_TF_BUFFER_UNDERFLOW, 0); // ctshim
 
   if (buf->error_abort)
     {
@@ -545,6 +546,7 @@ void
 or_abort (OR_BUF * buf)
 {
   /* assume an appropriate error has already been set */
+    er_set (ER_FATAL_ERROR_SEVERITY, ARG_FILE_LINE, ER_GENERIC_ERROR, 0); // ctshim
   if (buf->error_abort)
     {
       _longjmp (buf->env, er_errid ());
